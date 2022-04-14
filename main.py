@@ -38,8 +38,8 @@ np.set_printoptions(threshold=sys.maxsize)
 
 def main():
 
-    print("*** Before running this code ensure you keep the default batch size of 1. The code has not been engineered to support higher batch sizes. See README for more detail. Remove the exit() statement to use code. ***")
-    exit()
+    # print("*** Before running this code ensure you keep the default batch size of 1. The code has not been engineered to support higher batch sizes. See README for more detail. Remove the exit() statement to use code. ***")
+    # exit()
 
     writer = SummaryWriter()
 
