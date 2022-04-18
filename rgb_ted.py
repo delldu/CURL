@@ -13,6 +13,8 @@ Authors: Sean Moran (sean.j.moran@gmail.com), 2020
 import torch
 import torch.nn as nn
 
+import pdb
+
 class Flatten(nn.Module):
 
     def forward(self, x):
@@ -85,6 +87,7 @@ class TED(nn.Module):
             nn.Linear(64, 64),
 
         )
+        # pdb.set_trace() ==> Here !!!
 
     def forward(self, x):
         """Forward function for the TED network
@@ -94,6 +97,8 @@ class TED(nn.Module):
         :rtype: Tensor
 
         """
+        # x.size() -- [1, 3, 341, 512]
+
         x_in_tile = x.clone()
 
         conv1 = self.dconv_down1(x)
@@ -172,6 +177,7 @@ class TED(nn.Module):
         x = self.dconv_up1(x)
 
         out = x+x_in_tile
+        # out.size() -- [1, 3, 341, 512]
 
         return out
 
@@ -287,6 +293,8 @@ class TEDModel(nn.Module):
         self.ted = TED()
         self.final_conv = nn.Conv2d(3, 64, 3, 1, 0, 1)
         self.refpad = nn.ReflectionPad2d(1)
+
+        # pdb.set_trace() ==> Here
 
     def forward(self, img):
         """Forward function for TED

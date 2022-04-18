@@ -26,6 +26,8 @@ import torch.nn.functional as F
 
 np.set_printoptions(threshold=sys.maxsize)
 
+import pdb
+
 
 class CURLLoss(nn.Module):
 
@@ -260,9 +262,6 @@ class CURLLoss(nn.Module):
 
 
 class CURLLayer(nn.Module):
-
-    import torch.nn.functional as F
-
     def __init__(self, num_in_channels=64, num_out_channels=64):
         """Initialisation of class
 
@@ -540,6 +539,12 @@ class CURLNet(nn.Module):
         :rtype: numpy ndarray
 
         """
+        # img.size() -- [1, 3, 341, 512]
+
         feat = self.tednet(img)
         img, gradient_regulariser = self.curllayer(feat)
+
+        # gradient_regulariser --[1.3809e-09]
+        # gradient_regulariser.size() -- [1]
+
         return img, gradient_regulariser

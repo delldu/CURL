@@ -22,6 +22,7 @@ import sys
 matplotlib.use('agg')
 np.set_printoptions(threshold=sys.maxsize)
 
+import pdb
 
 class ImageProcessing(object):
 
@@ -34,6 +35,8 @@ class ImageProcessing(object):
         :rtype: Tensor
 
         """
+        # img.size() -- [3, 341, 512]
+
         img = img.permute(2, 1, 0)
         shape = img.shape
         img = img.contiguous()
@@ -84,6 +87,7 @@ class ImageProcessing(object):
         img[(img != img).detach()] = 0
 
         img = img.contiguous()
+        # img.size() -- [3, 341, 512]
 
         return img.cuda()
 
@@ -94,7 +98,10 @@ class ImageProcessing(object):
         :param img: image to be adjusted
         :returns: adjusted image
         :rtype: Tensor
-        """                
+        """
+        # img.size() -- [3, 341, 512]
+        # img.min(), img.max() -- 0., 0.6350
+
         img = img.permute(2, 1, 0)
         shape = img.shape
         img = img.contiguous()
@@ -270,6 +277,8 @@ class ImageProcessing(object):
         :rtype: Tensor
 
         """
+        # img.size() -- [3, 341, 512]
+
         img=torch.clamp(img,0,1)
         img = img.permute(2, 1, 0)
         
@@ -320,6 +329,8 @@ class ImageProcessing(object):
         :rtype: Tensor
 
         """
+        # img.size() -- [3, 341, 512]
+
         img=torch.clamp(img,1e-9,1)       
 
         img = img.permute(2, 1, 0)

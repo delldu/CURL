@@ -20,6 +20,7 @@ import logging
 from torch.autograd import Variable
 from util import ImageProcessing
 import matplotlib.pyplot as plt
+import pdb
 
 np.set_printoptions(threshold=sys.maxsize)
 
@@ -63,13 +64,26 @@ class Evaluator():
         net.eval()
         net.cuda()
 
+
         with torch.no_grad():
 
-            for batch_num, data in enumerate(self.data_loader, 0):
+            # for batch_num, data in enumerate(self.data_loader, 0):
+            for input_tensor, gt_tensor, name in self.data_loader:
+                batch_num = input_tensor.size(0)
 
-                input_img_batch, output_img_batch, name = Variable(data['input_img'], requires_grad=False).cuda(), Variable(data['output_img'],
-                                                                                                   requires_grad=False).cuda(), data['name']
+                # input_img_batch, output_img_batch, name = Variable(data['input_img'], requires_grad=False).cuda(), Variable(data['output_img'],
+                #   requires_grad=False).cuda(), data['name']
+                # input_tensor.size() -- [1, 3, 341, 512], 
+                # input_tensor.min(), input_tensor.max() -- 0.0275, 0.882
+                                                                  
+                input_img_batch = input_tensor.cuda()
+                output_img_batch = gt_tensor.cuda()
+
+                # pdb.set_trace()
+
                 input_img_batch = input_img_batch.unsqueeze(0)
+
+                # input_img_batch.size() -- [1, 1, 3, 341, 512]
 
                 for i in range(0, input_img_batch.shape[0]):
 
@@ -121,8 +135,8 @@ class Evaluator():
                     psnr_avg += psnr_example
                     ssim_avg += ssim_example
                     
-                    print(examples)
-                    print(loss)
+                    # print(examples)
+                    # print(loss)
                     if batch_num > 30:
                         '''
                         We save only the first 30 images down for time saving

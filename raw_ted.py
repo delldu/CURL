@@ -330,6 +330,8 @@ class TEDModel(nn.Module):
         self.final_conv = nn.Conv2d(16, 64, 3, 1, 0, 1)
         self.refpad = nn.ReflectionPad2d(1)
 
+        pdb.set_trace()
+
     def forward(self, image):
         """Forward function for TED
 

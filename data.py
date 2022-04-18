@@ -25,65 +25,129 @@ import random
 import matplotlib.pyplot as plt
 from PIL import Image 
 
+import pdb
+
 np.set_printoptions(threshold=sys.maxsize)
 
-class SamsungDataset(torch.utils.data.Dataset):
+import glob
+import torch.utils.data as data
+import torchvision.transforms as T
 
-    def __init__(self, data_dict, transform=None, normaliser=2 ** 8 - 1, is_valid=False):
-        """Initialisation for the Dataset object
-        :param data_dict: dictionary of dictionaries containing images
-        :param transform: PyTorch image transformations to apply to the images
-        :returns: N/A
-        :rtype: N/A
-        """
-        self.transform = transform
-        self.data_dict = data_dict
-        self.normaliser = normaliser # normaliser for groundtruth data
-        self.is_valid = is_valid
+def get_transform(train=True):
+    """Transform images."""
+    ts = []
+    # if train:
+    #     ts.append(T.RandomHorizontalFlip(0.5))
 
-    def __len__(self):
-        """Returns the number of images in the dataset
-        :returns: number of images in the dataset
-        :rtype: Integer
-        """
-        return (len(self.data_dict.keys()))
+    ts.append(T.ToTensor())
+    return T.Compose(ts)
+
+
+class CurlExampleTestDataset(data.Dataset):
+    """Define dataset."""
+
+    def __init__(self, root, transforms=get_transform()):
+        """Init dataset."""
+        super(CurlExampleTestDataset, self).__init__()
+
+        self.root = root
+        self.transforms = transforms
+
+        self.gt_files = sorted(glob.glob(root + "/curl_example_test_inference/*.jpg"))
+        self.input_files = sorted(glob.glob(root + "/curl_example_test_input/*.png"))
 
     def __getitem__(self, idx):
-        """Returns a pair of images with the given identifier. This is lazy loading
-        of data into memory. Only those image pairs needed for the current batch
-        are loaded.
-        :param idx: image pair identifier
-        :returns: dictionary containing input and output images and their identifier
-        :rtype: dictionary
+        """Load images."""
+        input_image = Image.open(self.input_files[idx]).convert("RGB")
+        gt_image = Image.open(self.gt_files[idx]).convert("RGB")
+
+        if self.transforms is not None:
+            input_image = self.transforms(input_image)
+            gt_image = self.transforms(gt_image)
+
+        return input_image, gt_image, os.path.basename(self.input_files[idx])
+
+    def __len__(self):
+        """Return total numbers of images."""
+        return len(self.input_files)
+
+    def __repr__(self):
         """
-        while True:
+        Return printable representation of the dataset object.
+        """
+        fmt_str = "Dataset " + self.__class__.__name__ + "\n"
+        fmt_str += "    Number of samples: {}\n".format(self.__len__())
+        fmt_str += "    Root Location: {}\n".format(self.root)
+        tmp = "    Transforms: "
+        fmt_str += "{0}{1}\n".format(
+            tmp, self.transforms.__repr__().replace("\n", "\n" + " " * len(tmp))
+        )
+        return fmt_str
 
-            if idx in self.data_dict:
+def get_test_data_loader():
+    ds = CurlExampleTestDataset('adobe5k_dpe', get_transform(train=True))
+    print(ds)
 
-                output_img = util.ImageProcessing.load_image(
-                    self.data_dict[idx]['output_img'], normaliser=self.normaliser)
-                input_img = np.load(self.data_dict[idx]['input_img'])
+    return data.DataLoader(ds, batch_size=1, shuffle=False, num_workers=1)
 
-                input_img = input_img / (2**10-1)  # change this normalisation
-                                        # factor for your data
-                shape = input_img.shape
-                input_img = np.clip(input_img, 0, 1)
-                input_img[np.isnan(input_img)] = 0
 
-                seed = random.uniform(0, 10000)
+# class SamsungDataset(torch.utils.data.Dataset):
 
-                if not self.is_valid:
-                    random.seed(seed)  # make a seed with numpy generation
-                    i = random.randint(0, input_img.shape[0]-512)  # patch size
-                                        # of 512 pixels
-                    j = random.randint(0, input_img.shape[1]-512)
-                    i = i-(i % 2)  # ensure on Bayer pattern boundary
-                    j = j-(j % 2)
-                    input_img = input_img[i:(i+512), j:(j+512)]
-                    output_img = output_img[i:(i+512), j:(j+512), :]
+#     def __init__(self, data_dict, transform=None, normaliser=2 ** 8 - 1, is_valid=False):
+#         """Initialisation for the Dataset object
+#         :param data_dict: dictionary of dictionaries containing images
+#         :param transform: PyTorch image transformations to apply to the images
+#         :returns: N/A
+#         :rtype: N/A
+#         """
+#         self.transform = transform
+#         self.data_dict = data_dict
+#         self.normaliser = normaliser # normaliser for groundtruth data
+#         self.is_valid = is_valid
 
-                return {'input_img': input_img, 'output_img': output_img,
-                        'name': self.data_dict[idx]['input_img'].split("/")[-1]}
+#     def __len__(self):
+#         """Returns the number of images in the dataset
+#         :returns: number of images in the dataset
+#         :rtype: Integer
+#         """
+#         return (len(self.data_dict.keys()))
+
+#     def __getitem__(self, idx):
+#         """Returns a pair of images with the given identifier. This is lazy loading
+#         of data into memory. Only those image pairs needed for the current batch
+#         are loaded.
+#         :param idx: image pair identifier
+#         :returns: dictionary containing input and output images and their identifier
+#         :rtype: dictionary
+#         """
+#         while True:
+
+#             if idx in self.data_dict:
+
+#                 output_img = util.ImageProcessing.load_image(
+#                     self.data_dict[idx]['output_img'], normaliser=self.normaliser)
+#                 input_img = np.load(self.data_dict[idx]['input_img'])
+
+#                 input_img = input_img / (2**10-1)  # change this normalisation
+#                                         # factor for your data
+#                 shape = input_img.shape
+#                 input_img = np.clip(input_img, 0, 1)
+#                 input_img[np.isnan(input_img)] = 0
+
+#                 seed = random.uniform(0, 10000)
+
+#                 if not self.is_valid:
+#                     random.seed(seed)  # make a seed with numpy generation
+#                     i = random.randint(0, input_img.shape[0]-512)  # patch size
+#                                         # of 512 pixels
+#                     j = random.randint(0, input_img.shape[1]-512)
+#                     i = i-(i % 2)  # ensure on Bayer pattern boundary
+#                     j = j-(j % 2)
+#                     input_img = input_img[i:(i+512), j:(j+512)]
+#                     output_img = output_img[i:(i+512), j:(j+512), :]
+
+#                 return {'input_img': input_img, 'output_img': output_img,
+#                         'name': self.data_dict[idx]['input_img'].split("/")[-1]}
 
 class Dataset(torch.utils.data.Dataset):
 
@@ -267,6 +331,7 @@ class Adobe5kDataLoader(DataLoader):
             # you may also want to remove whitespace characters like `\n` at the end of each line
             image_ids_list = [x.rstrip() for x in image_ids]
 
+        # image_ids_list -- ['a2803-060810_075208_GM6A0020_input.png' ... ]
         idx = 0
         idx_tmp = 0
         img_id_to_idx_dict = {}
@@ -318,6 +383,8 @@ class Adobe5kDataLoader(DataLoader):
         for idx, imgs in self.data_dict.items():
             assert ('input_img' in imgs)
             assert ('output_img' in imgs)
+
+        pdb.set_trace()
 
         return self.data_dict
 

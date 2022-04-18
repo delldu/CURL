@@ -18,7 +18,7 @@ please use a batch size of 1 only ***
 
 '''
 
-from data import Adobe5kDataLoader, Dataset
+from data import Adobe5kDataLoader, Dataset, get_test_data_loader
 import time
 import torch
 import torchvision.transforms as transforms
@@ -36,6 +36,8 @@ import sys
 from torch.utils.tensorboard import SummaryWriter
 np.set_printoptions(threshold=sys.maxsize)
 
+import pdb
+
 def main():
 
     # print("*** Before running this code ensure you keep the default batch size of 1. The code has not been engineered to support higher batch sizes. See README for more detail. Remove the exit() statement to use code. ***")
@@ -43,9 +45,11 @@ def main():
 
     writer = SummaryWriter()
 
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d')
     log_dirpath = "./log_" + timestamp
-    os.mkdir(log_dirpath)
+    if not os.path.exists(log_dirpath):
+        os.mkdir(log_dirpath)
+    # log_dirpath -- './log_2022-04-16'
 
     handlers = [logging.FileHandler(
         log_dirpath + "/curl.log"), logging.StreamHandler()]
@@ -85,7 +89,9 @@ def main():
 
     BATCH_SIZE=1  # *** WARNING: batch size of > 1 not supported in current version of code ***
 
-    if (checkpoint_filepath is not None) and (inference_img_dirpath is not None):
+    # inference_img_dirpath -- './adobe5k_dpe/curl_example_test_input'
+
+    if (checkpoint_filepath is not None) and (inference_img_dirpath is not None): # True
 
         '''
         inference_img_dirpath: the actual filepath should have "input" in the name an in the level above where the images 
@@ -98,15 +104,18 @@ def main():
         '''
         assert(BATCH_SIZE==1)
 
-        inference_data_loader = Adobe5kDataLoader(data_dirpath=inference_img_dirpath,
-                                                  img_ids_filepath=inference_img_dirpath+"/images_inference.txt")
-        inference_data_dict = inference_data_loader.load_data()
-        inference_dataset = Dataset(data_dict=inference_data_dict,
-                                    transform=transforms.Compose([transforms.ToTensor()]), normaliser=1,
-                                    is_inference=True)
+        # inference_data_loader = Adobe5kDataLoader(data_dirpath=inference_img_dirpath,
+        #                                           img_ids_filepath=inference_img_dirpath+"/../images_inference.txt")
+        # inference_data_dict = inference_data_loader.load_data()
+        # inference_dataset = Dataset(data_dict=inference_data_dict,
+        #                             transform=transforms.Compose([transforms.ToTensor()]), normaliser=1,
+        #                             is_inference=True)
 
-        inference_data_loader = torch.utils.data.DataLoader(inference_dataset, batch_size=BATCH_SIZE, shuffle=False,
-                                                            num_workers=10)
+        # inference_data_loader = torch.utils.data.DataLoader(inference_dataset, batch_size=BATCH_SIZE, shuffle=False,
+        #                                                     num_workers=10)
+
+        inference_data_loader = get_test_data_loader()
+
 
         '''
         Performs inference on all the images in inference_img_dirpath
@@ -116,8 +125,11 @@ def main():
 
         net = model.CURLNet()
         checkpoint = torch.load(checkpoint_filepath, map_location='cuda')
-        net.load_state_dict(checkpoint['model_state_dict'])
+        # net.load_state_dict(checkpoint['model_state_dict'])
+        net.load_state_dict(checkpoint)
         net.eval()
+
+        # pdb.set_trace()
 
         criterion = model.CURLLoss()
 
