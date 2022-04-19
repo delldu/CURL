@@ -1,4 +1,4 @@
-"""Image/Video Autops Package."""  # coding=utf-8
+"""Image/Video CURL Package."""  # coding=utf-8
 #
 # /************************************************************************************
 # ***

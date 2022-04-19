@@ -38,6 +38,10 @@ class CURLNet(nn.Module):
 
 
 class TEDModel(nn.Module):
+    """
+    TED -- Transformed Encoder Decoder
+    """
+
     def __init__(self):
         super(TEDModel, self).__init__()
 
@@ -144,7 +148,6 @@ class TED(nn.Module):
             nn.Dropout(0.5),
             nn.Linear(64, 64),
         )
-        # pdb.set_trace() ==> Here !!!
 
     def forward(self, x):
         # x.size() -- [1, 3, 341, 512]
@@ -289,7 +292,7 @@ def rgb_to_lab(img):
 
 
 def lab_to_rgb(img):
-    """PyTorch implementation of LAB to RGB conversion: https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
+    """https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
     Based roughly on a similar implementation here: https://github.com/affinelayer/pix2pix-tensorflow/blob/master/pix2pix.py
     :param img: image to be adjusted
     :returns: adjusted image
@@ -311,8 +314,7 @@ def lab_to_rgb(img):
     del img_copy
 
     lab_to_fxfyfz = torch.tensor(
-        [
-            # X Y Z
+        [  # X Y Z
             [1.0 / 116.0, 1.0 / 116.0, 1 / 116.0],  # R
             [1.0 / 500.0, 0.0, 0.0],  # G
             [0.0, 0.0, -1.0 / 200.0],  # B
@@ -323,7 +325,7 @@ def lab_to_rgb(img):
 
     epsilon = 6.0 / 29.0
 
-    img = ((3.0 * epsilon ** 2 * (img - 4.0 / 29.0)) * img.le(epsilon).float()) + (
+    img = (3.0 * epsilon ** 2 * (img - 4.0 / 29.0)) * img.le(epsilon).float() + (
         (torch.clamp(img, min=0.0001) ** 3.0) * img.gt(epsilon).float()
     )
 
@@ -341,7 +343,7 @@ def lab_to_rgb(img):
     img = torch.matmul(img, xyz_to_rgb)
 
     img = (img * 12.92 * img.le(0.0031308).float()) + (
-        (torch.clamp(img, min=0.0001) ** (1 / 2.4) * 1.055) - 0.055
+        (torch.clamp(img, min=0.0001) ** (1.0 / 2.4) * 1.055) - 0.055
     ) * img.gt(0.0031308).float()
 
     img = img.view(shape)
@@ -354,8 +356,8 @@ def lab_to_rgb(img):
 
 
 def hsv_to_rgb(img):
-    """Converts a HSV image to RGB
-    PyTorch implementation of RGB to HSV conversion: https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
+    """
+    https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
     Based roughly on a similar implementation here: http://code.activestate.com/recipes/576919-python-rgb-and-hsv-conversion/
 
     :param img: HSV image
@@ -412,14 +414,13 @@ def hsv_to_rgb(img):
 
     img = img.permute(2, 1, 0)
     img = img.contiguous()
-    img = torch.clamp(img, 0, 1)
 
-    return img
+    return img.clamp(0.0, 1.0)
 
 
 def rgb_to_hsv(img):
-    """Converts an RGB image to HSV
-    PyTorch implementation of RGB to HSV conversion: https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
+    """
+    https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
     Based roughly on a similar implementation here: http://code.activestate.com/recipes/576919-python-rgb-and-hsv-conversion/
 
     :param img: RGB image
@@ -479,9 +480,10 @@ def rgb_to_hsv(img):
     zero = zero.to(img.device)
     img_copy2 = img_copy.clone()
 
-    img_copy2[:, :, 0] = img_copy[:, :, 0].lt(zero).float() * (img_copy[:, :, 0] + 360) + img_copy[:, :, 0].ge(
-        zero
-    ).float() * (img_copy[:, :, 0])
+    img_copy2[:, :, 0] = (
+        img_copy[:, :, 0].lt(zero).float() * (img_copy[:, :, 0] + 360)
+        + img_copy[:, :, 0].ge(zero).float() * img_copy[:, :, 0]
+    )
 
     img_copy2[:, :, 0] = img_copy2[:, :, 0] / 360.0
 
@@ -495,9 +497,7 @@ def rgb_to_hsv(img):
     img = img_copy2.clone()
 
     img = img.permute(2, 1, 0)
-    img = torch.clamp(img, 1e-9, 1)
-
-    return img
+    return img.clamp(1e-9, 1.0)
 
 
 def apply_curve(img, C, slope_sqr_diff, channel_in: int, channel_out: int) -> List[torch.Tensor]:
@@ -539,9 +539,7 @@ def apply_curve(img, C, slope_sqr_diff, channel_in: int, channel_out: int) -> Li
 
     img_copy[:, :, channel_out] = img[:, :, channel_out] * scale
 
-    img_copy = torch.clamp(img_copy, 0.0, 1.0)
-
-    return img_copy, slope_sqr_diff
+    return img_copy.clamp(0.0, 1.0), slope_sqr_diff
 
 
 def adjust_hsv(img, S) -> List[torch.Tensor]:
@@ -696,8 +694,8 @@ class LocalNet(nn.Module):
 
     def forward(self, x_in):
         x = self.lrelu(self.conv1(self.refpad(x_in)))
-        x = self.lrelu(self.conv2(self.refpad(x)))
-        return x
+        return self.lrelu(self.conv2(self.refpad(x)))
+
 
 class ConvBlock(nn.Module):
     def __init__(self, num_in_channels, num_out_channels, stride=1):
@@ -706,8 +704,7 @@ class ConvBlock(nn.Module):
         self.lrelu = nn.LeakyReLU()
 
     def forward(self, x):
-        img_out = self.lrelu(self.conv(x))
-        return img_out
+        return self.lrelu(self.conv(x))
 
 
 class MaxPoolBlock(nn.Module):
@@ -716,8 +713,7 @@ class MaxPoolBlock(nn.Module):
         self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
     def forward(self, x):
-        img_out = self.max_pool(x)
-        return img_out
+        return self.max_pool(x)
 
 
 class GlobalPoolingBlock(nn.Module):
@@ -726,8 +722,7 @@ class GlobalPoolingBlock(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
 
     def forward(self, x):
-        out = self.avg_pool(x)
-        return out
+        return self.avg_pool(x)
 
 
 class CURLLayer(nn.Module):
@@ -823,8 +818,7 @@ class CURLLayer(nn.Module):
         img_rgb, gradient_regulariser_rgb = adjust_rgb(img_rgb.squeeze(0), R[0, 0:48])
         img_rgb = torch.clamp(img_rgb, 0.0, 1.0)
 
-        img_hsv = rgb_to_hsv(img_rgb.squeeze(0))
-        img_hsv = torch.clamp(img_hsv, 0.0, 1.0)
+        img_hsv = rgb_to_hsv(img_rgb.squeeze(0)).clamp(0.0, 1.0)
         feat_hsv = torch.cat((feat, img_hsv.unsqueeze(0)), 1)
 
         x = self.hsv_layer1(feat_hsv)
