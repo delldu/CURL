@@ -64,11 +64,13 @@ class Evaluator():
         net.eval()
         net.cuda()
 
-
+        progress_count = 0
         with torch.no_grad():
-
             # for batch_num, data in enumerate(self.data_loader, 0):
             for input_tensor, gt_tensor, name in self.data_loader:
+                print("progress: ", progress_count, " ...")
+                progress_count += 1
+
                 batch_num = input_tensor.size(0)
 
                 # input_img_batch, output_img_batch, name = Variable(data['input_img'], requires_grad=False).cuda(), Variable(data['output_img'],

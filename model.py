@@ -335,8 +335,8 @@ class CURLLayer(nn.Module):
         '''
         x.contiguous()  # remove memory holes
 
-        feat = x[:, 3:64, :, :]
         img = x[:, 0:3, :, :]
+        feat = x[:, 3:64, :, :]
 
         torch.cuda.empty_cache()
         shape = x.shape
@@ -547,4 +547,4 @@ class CURLNet(nn.Module):
         # gradient_regulariser --[1.3809e-09]
         # gradient_regulariser.size() -- [1]
 
-        return img, gradient_regulariser
+        return img.clamp(0, 1.0), gradient_regulariser

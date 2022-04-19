@@ -27,6 +27,9 @@ class Flatten(nn.Module):
         """
         return x.view(x.size()[0], -1)
 
+def make_layer(nIn, nOut, k, s, p, d=1):
+    return nn.Sequential(nn.Conv2d(nIn, nOut, k, s, p, d), nn.LeakyReLU(inplace=True))
+
 
 class TED(nn.Module):
 
@@ -38,9 +41,6 @@ class TED(nn.Module):
 
         """
         super().__init__()
-
-        def layer(nIn, nOut, k, s, p, d=1):
-            return nn.Sequential(nn.Conv2d(nIn, nOut, k, s, p, d), nn.LeakyReLU(inplace=True))
 
         self.conv1 = nn.Conv2d(16, 64, 1)
         self.conv2 = nn.Conv2d(32, 64, 1)
@@ -72,15 +72,15 @@ class TED(nn.Module):
         self.conv_fuse1 = nn.Conv2d(208, 16, 1)
 
         self.glob_net1 = nn.Sequential(
-            layer(16, 64, 3, 2, 1),
+            make_layer(16, 64, 3, 2, 1),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-            layer(64, 64, 3, 2, 1),
+            make_layer(64, 64, 3, 2, 1),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-            layer(64, 64, 3, 2, 1),
+            make_layer(64, 64, 3, 2, 1),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-            layer(64, 64, 3, 2, 1),
+            make_layer(64, 64, 3, 2, 1),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-            layer(64, 64, 3, 2, 1),
+            make_layer(64, 64, 3, 2, 1),
             nn.AdaptiveAvgPool2d(1),
             Flatten(),
             nn.Dropout(0.5),

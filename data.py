@@ -53,8 +53,11 @@ class CurlExampleTestDataset(data.Dataset):
         self.root = root
         self.transforms = transforms
 
-        self.gt_files = sorted(glob.glob(root + "/curl_example_test_inference/*.jpg"))
-        self.input_files = sorted(glob.glob(root + "/curl_example_test_input/*.png"))
+        # self.gt_files = sorted(glob.glob(root + "/curl_example_test_inference/*.jpg"))
+        # self.input_files = sorted(glob.glob(root + "/curl_example_test_input/*.png"))
+
+        self.gt_files = sorted(glob.glob(root + "/B/*.jpg"))
+        self.input_files = sorted(glob.glob(root + "/A/*.jpg"))
 
     def __getitem__(self, idx):
         """Load images."""
