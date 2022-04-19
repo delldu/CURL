@@ -37,11 +37,11 @@ def get_model():
     model = model.to(device)
     model.eval()
 
-    # model = torch.jit.script(model)
+    model = torch.jit.script(model)
 
-    # todos.data.mkdir("output")
-    # if not os.path.exists("output/image_curl.torch"):
-    #     model.save("output/image_curl.torch")
+    todos.data.mkdir("output")
+    if not os.path.exists("output/image_curl.torch"):
+        model.save("output/image_curl.torch")
 
     return model, device
 
@@ -126,7 +126,7 @@ def video_service(input_file, output_file, targ):
     print(f"  curl {input_file}, save to {output_file} ...")
     progress_bar = tqdm(total=video.n_frames)
 
-    def autops_video_frame(no, data):
+    def curl_video_frame(no, data):
         # print(f"frame: {no} -- {data.shape}")
         progress_bar.update(1)
 
@@ -139,7 +139,7 @@ def video_service(input_file, output_file, targ):
         temp_output_file = "{}/{:06d}.png".format(output_dir, no)
         todos.data.save_tensor(output_tensor, temp_output_file)
 
-    video.forward(callback=autops_video_frame)
+    video.forward(callback=curl_video_frame)
 
     redos.video.encode(output_dir, output_file)
 
@@ -160,4 +160,4 @@ def video_client(name, input_file, output_file):
 
 
 def video_server(name, host="localhost", port=6379):
-    return redos.video.service(name, "video_autops", video_service, host, port)
+    return redos.video.service(name, "video_curl", video_service, host, port)

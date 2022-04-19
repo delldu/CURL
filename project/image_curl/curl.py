@@ -13,8 +13,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-# from torch.nn import init
+from typing import List
 
 import pdb
 
@@ -163,11 +162,11 @@ class TED(nn.Module):
         x = self.up_conv1x1_1(self.upsample(x))
 
         if x.shape[3] != conv4.shape[3] and x.shape[2] != conv4.shape[2]:
-            x = torch.nn.functional.pad(x, (1, 0, 0, 1))
+            x = F.pad(x, (1, 0, 0, 1))
         elif x.shape[2] != conv4.shape[2]:
-            x = torch.nn.functional.pad(x, (0, 0, 0, 1))
+            x = F.pad(x, (0, 0, 0, 1))
         elif x.shape[3] != conv4.shape[3]:
-            x = torch.nn.functional.pad(x, (1, 0, 0, 0))
+            x = F.pad(x, (1, 0, 0, 0))
 
         del conv4
 
@@ -175,11 +174,11 @@ class TED(nn.Module):
         x = self.up_conv1x1_2(self.upsample(x))
 
         if x.shape[3] != conv3.shape[3] and x.shape[2] != conv3.shape[2]:
-            x = torch.nn.functional.pad(x, (1, 0, 0, 1))
+            x = F.pad(x, (1, 0, 0, 1))
         elif x.shape[2] != conv3.shape[2]:
-            x = torch.nn.functional.pad(x, (0, 0, 0, 1))
+            x = F.pad(x, (0, 0, 0, 1))
         elif x.shape[3] != conv3.shape[3]:
-            x = torch.nn.functional.pad(x, (1, 0, 0, 0))
+            x = F.pad(x, (1, 0, 0, 0))
 
         x = self.dconv_up3(x)
         x = self.up_conv1x1_3(self.upsample(x))
@@ -187,11 +186,11 @@ class TED(nn.Module):
         del conv3
 
         if x.shape[3] != conv2.shape[3] and x.shape[2] != conv2.shape[2]:
-            x = torch.nn.functional.pad(x, (1, 0, 0, 1))
+            x = F.pad(x, (1, 0, 0, 1))
         elif x.shape[2] != conv2.shape[2]:
-            x = torch.nn.functional.pad(x, (0, 0, 0, 1))
+            x = F.pad(x, (0, 0, 0, 1))
         elif x.shape[3] != conv2.shape[3]:
-            x = torch.nn.functional.pad(x, (1, 0, 0, 0))
+            x = F.pad(x, (1, 0, 0, 0))
 
         x = self.dconv_up2(x)
         x = self.up_conv1x1_4(self.upsample(x))
@@ -208,11 +207,11 @@ class TED(nn.Module):
         conv1_fuse = self.conv_fuse1(fuse)
 
         if x.shape[3] != conv1.shape[3] and x.shape[2] != conv1.shape[2]:
-            x = torch.nn.functional.pad(x, (1, 0, 0, 1))
+            x = F.pad(x, (1, 0, 0, 1))
         elif x.shape[2] != conv1.shape[2]:
-            x = torch.nn.functional.pad(x, (0, 0, 0, 1))
+            x = F.pad(x, (0, 0, 0, 1))
         elif x.shape[3] != conv1.shape[3]:
-            x = torch.nn.functional.pad(x, (1, 0, 0, 0))
+            x = F.pad(x, (1, 0, 0, 0))
 
         x = torch.cat([x, conv1_fuse], dim=1)
         del conv1
@@ -225,13 +224,11 @@ class TED(nn.Module):
         return out
 
 
-def rgb_to_lab(img, is_training=True):
+def rgb_to_lab(img):
     """PyTorch implementation of RGB to LAB conversion: https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
     Based roughly on a similar implementation here: https://github.com/affinelayer/pix2pix-tensorflow/blob/master/pix2pix.py
     :param img: image to be adjusted
     :returns: adjusted image
-    :rtype: Tensor
-
     """
     # img.size() -- [3, 341, 512]
 
@@ -244,32 +241,32 @@ def rgb_to_lab(img, is_training=True):
         0.04045
     ).float()
 
-    rgb_to_xyz = torch.FloatTensor(
+    rgb_to_xyz = torch.tensor(
         [  # X        Y          Z
             [0.412453, 0.212671, 0.019334],  # R
             [0.357580, 0.715160, 0.119193],  # G
             [0.180423, 0.072169, 0.950227],  # B
         ]
-    ).cuda()
+    ).to(img.device)
 
     img = torch.matmul(img, rgb_to_xyz)
-    img = torch.mul(img, torch.FloatTensor([1 / 0.950456, 1.0, 1 / 1.088754]).cuda())
+    img = torch.mul(img, torch.tensor([1 / 0.950456, 1.0, 1 / 1.088754]).to(img.device))
 
-    epsilon = 6 / 29
+    epsilon = 6.0 / 29.0
 
     img = ((img / (3.0 * epsilon ** 2) + 4.0 / 29.0) * img.le(epsilon ** 3).float()) + (
         torch.clamp(img, min=0.0001) ** (1.0 / 3.0) * img.gt(epsilon ** 3).float()
     )
 
-    fxfyfz_to_lab = torch.FloatTensor(
+    fxfyfz_to_lab = torch.tensor(
         [
             [0.0, 500.0, 0.0],  # fx
             [116.0, -500.0, 200.0],  # fy
             [0.0, 0.0, -200.0],  # fz
         ]
-    ).cuda()
+    ).to(img.device)
 
-    img = torch.matmul(img, fxfyfz_to_lab) + torch.FloatTensor([-16.0, 0.0, 0.0]).cuda()
+    img = torch.matmul(img, fxfyfz_to_lab) + torch.tensor([-16.0, 0.0, 0.0]).to(img.device)
 
     img = img.view(shape)
     img = img.permute(2, 1, 0)
@@ -288,15 +285,14 @@ def rgb_to_lab(img, is_training=True):
     img = img.contiguous()
     # img.size() -- [3, 341, 512]
 
-    return img.cuda()
+    return img
 
 
-def lab_to_rgb(img, is_training=True):
+def lab_to_rgb(img):
     """PyTorch implementation of LAB to RGB conversion: https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
     Based roughly on a similar implementation here: https://github.com/affinelayer/pix2pix-tensorflow/blob/master/pix2pix.py
     :param img: image to be adjusted
     :returns: adjusted image
-    :rtype: Tensor
     """
     # img.size() -- [3, 341, 512]
     # img.min(), img.max() -- 0., 0.6350
@@ -314,16 +310,16 @@ def lab_to_rgb(img, is_training=True):
     img = img_copy.clone()
     del img_copy
 
-    lab_to_fxfyfz = torch.FloatTensor(
+    lab_to_fxfyfz = torch.tensor(
         [
             # X Y Z
-            [1 / 116.0, 1 / 116.0, 1 / 116.0],  # R
-            [1 / 500.0, 0, 0],  # G
-            [0, 0, -1 / 200.0],  # B
+            [1.0 / 116.0, 1.0 / 116.0, 1 / 116.0],  # R
+            [1.0 / 500.0, 0.0, 0.0],  # G
+            [0.0, 0.0, -1.0 / 200.0],  # B
         ]
-    ).cuda()
+    ).to(img.device)
 
-    img = torch.matmul(img + torch.cuda.FloatTensor([16.0, 0.0, 0.0]), lab_to_fxfyfz)
+    img = torch.matmul(img + torch.tensor([16.0, 0.0, 0.0]).to(img.device), lab_to_fxfyfz)
 
     epsilon = 6.0 / 29.0
 
@@ -332,15 +328,15 @@ def lab_to_rgb(img, is_training=True):
     )
 
     # denormalize for D65 white point
-    img = torch.mul(img, torch.cuda.FloatTensor([0.950456, 1.0, 1.088754]))
+    img = torch.mul(img, torch.tensor([0.950456, 1.0, 1.088754]).to(img.device))
 
-    xyz_to_rgb = torch.FloatTensor(
+    xyz_to_rgb = torch.tensor(
         [  # X Y Z
             [3.2404542, -0.9692660, 0.0556434],  # R
             [-1.5371385, 1.8760108, -0.2040259],  # G
             [-0.4985314, 0.0415560, 1.0572252],  # B
         ]
-    ).cuda()
+    ).to(img.device)
 
     img = torch.matmul(img, xyz_to_rgb)
 
@@ -364,8 +360,6 @@ def hsv_to_rgb(img):
 
     :param img: HSV image
     :returns: RGB image
-    :rtype: Tensor
-
     """
     # img.size() -- [3, 341, 512]
 
@@ -380,37 +374,37 @@ def hsv_to_rgb(img):
 
     r = (
         img[:, :, 2]
-        + torch.clamp(img[:, :, 0] * 360 - 0, 0, 60) * m1
-        + torch.clamp(img[:, :, 0] * 360 - 60, 0, 60) * m2
-        + torch.clamp(img[:, :, 0] * 360 - 120, 0, 120) * m3
-        + torch.clamp(img[:, :, 0] * 360 - 240, 0, 60) * m4
-        + torch.clamp(img[:, :, 0] * 360 - 300, 0, 60) * m5
+        + torch.clamp(img[:, :, 0] * 360.0 - 0.0, 0.0, 60.0) * m1
+        + torch.clamp(img[:, :, 0] * 360.0 - 60.0, 0.0, 60.0) * m2
+        + torch.clamp(img[:, :, 0] * 360.0 - 120.0, 0.0, 120.0) * m3
+        + torch.clamp(img[:, :, 0] * 360.0 - 240.0, 0.0, 60.0) * m4
+        + torch.clamp(img[:, :, 0] * 360.0 - 300.0, 0.0, 60.0) * m5
     )
 
-    m1 = (img[:, :, 2] - img[:, :, 2] * (1 - img[:, :, 1])) / 60
-    m2 = 0
-    m3 = -1 * m1
-    m4 = 0
+    m1 = (img[:, :, 2] - img[:, :, 2] * (1.0 - img[:, :, 1])) / 60
+    m2 = 0.0
+    m3 = -1.0 * m1
+    m4 = 0.0
 
     g = (
         img[:, :, 2] * (1 - img[:, :, 1])
-        + torch.clamp(img[:, :, 0] * 360 - 0, 0, 60) * m1
-        + torch.clamp(img[:, :, 0] * 360 - 60, 0, 120) * m2
-        + torch.clamp(img[:, :, 0] * 360 - 180, 0, 60) * m3
-        + torch.clamp(img[:, :, 0] * 360 - 240, 0, 120) * m4
+        + torch.clamp(img[:, :, 0] * 360.0 - 0.0, 0.0, 60.0) * m1
+        + torch.clamp(img[:, :, 0] * 360.0 - 60.0, 0.0, 120.0) * m2
+        + torch.clamp(img[:, :, 0] * 360.0 - 180.0, 0.0, 60.0) * m3
+        + torch.clamp(img[:, :, 0] * 360.0 - 240.0, 0.0, 120.0) * m4
     )
 
-    m1 = 0
-    m2 = (img[:, :, 2] - img[:, :, 2] * (1 - img[:, :, 1])) / 60
-    m3 = 0
-    m4 = -1 * m2
+    m1 = 0.0
+    m2 = (img[:, :, 2] - img[:, :, 2] * (1.0 - img[:, :, 1])) / 60.0
+    m3 = 0.0
+    m4 = -1.0 * m2
 
     b = (
-        img[:, :, 2] * (1 - img[:, :, 1])
-        + torch.clamp(img[:, :, 0] * 360 - 0, 0, 120) * m1
-        + torch.clamp(img[:, :, 0] * 360 - 120, 0, 60) * m2
-        + torch.clamp(img[:, :, 0] * 360 - 180, 0, 120) * m3
-        + torch.clamp(img[:, :, 0] * 360 - 300, 0, 60) * m4
+        img[:, :, 2] * (1.0 - img[:, :, 1])
+        + torch.clamp(img[:, :, 0] * 360.0 - 0.0, 0.0, 120.0) * m1
+        + torch.clamp(img[:, :, 0] * 360.0 - 120.0, 0.0, 60.0) * m2
+        + torch.clamp(img[:, :, 0] * 360.0 - 180.0, 0.0, 120.0) * m3
+        + torch.clamp(img[:, :, 0] * 360.0 - 300.0, 0.0, 60.0) * m4
     )
 
     img = torch.stack((r, g, b), 2)
@@ -430,12 +424,10 @@ def rgb_to_hsv(img):
 
     :param img: RGB image
     :returns: HSV image
-    :rtype: Tensor
-
     """
     # img.size() -- [3, 341, 512]
 
-    img = torch.clamp(img, 1e-9, 1)
+    img = torch.clamp(img, 1e-9, 1.0)
 
     img = img.permute(2, 1, 0)
     shape = img.shape
@@ -446,8 +438,8 @@ def rgb_to_hsv(img):
     mx = torch.max(img, 1)[0]
     mn = torch.min(img, 1)[0]
 
-    ones = torch.FloatTensor(torch.ones((img.shape[0]))).cuda()
-    zero = torch.FloatTensor(torch.zeros(shape[0:2])).cuda()
+    ones = torch.ones(img.shape[0]).to(img.device)
+    zero = torch.zeros(shape[0:2]).to(img.device)
 
     img = img.view(shape)
 
@@ -462,18 +454,18 @@ def rgb_to_hsv(img):
     df1 = torch.add(mx1, torch.mul(ones1 * -1, mn1))
     df2 = torch.add(mx2, torch.mul(ones2 * -1, mn2))
 
-    df = torch.cat((df1, df2), 0)
+    df = torch.cat((df1, df2), dim=0)
     del df1, df2
     df = df.view(shape[0:2]) + 1e-10
     mx = mx.view(shape[0:2])
 
-    img = img.cuda()
-    df = df.cuda()
-    mx = mx.cuda()
+    img = img
+    df = df.to(img.device)
+    mx = mx.to(img.device)
 
-    g = img[:, :, 1].clone().cuda()
-    b = img[:, :, 2].clone().cuda()
-    r = img[:, :, 0].clone().cuda()
+    g = img[:, :, 1].clone()
+    b = img[:, :, 2].clone()
+    r = img[:, :, 0].clone()
 
     img_copy = img.clone()
 
@@ -484,14 +476,14 @@ def rgb_to_hsv(img):
     )
     img_copy[:, :, 0] = img_copy[:, :, 0] * 60.0
 
-    zero = zero.cuda()
+    zero = zero.to(img.device)
     img_copy2 = img_copy.clone()
 
     img_copy2[:, :, 0] = img_copy[:, :, 0].lt(zero).float() * (img_copy[:, :, 0] + 360) + img_copy[:, :, 0].ge(
         zero
     ).float() * (img_copy[:, :, 0])
 
-    img_copy2[:, :, 0] = img_copy2[:, :, 0] / 360
+    img_copy2[:, :, 0] = img_copy2[:, :, 0] / 360.0
 
     del img, r, g, b
 
@@ -508,18 +500,21 @@ def rgb_to_hsv(img):
     return img
 
 
-def apply_curve(img, C, slope_sqr_diff, channel_in, channel_out, clamp=False):
+def apply_curve(img, C, slope_sqr_diff, channel_in: int, channel_out: int) -> List[torch.Tensor]:
     """Applies a peicewise linear curve defined by a set of knot points to
     an image channel
 
     :param img: image to be adjusted
     :param C: predicted knot points of curve
     :returns: adjusted image
-    :rtype: Tensor
-
     """
-    slope = torch.zeros((C.shape[0] - 1)).cuda()
+    # C -- tensor([1.0102, 1.0090, 1.0077, 1.0064, 1.0052, 1.0039, 1.0026, 1.0014, 1.0001,
+    #     0.9988, 0.9976, 0.9963, 0.9950, 0.9938, 0.9925, 0.9912],
+    #    device='cuda:0')
+
+    slope = torch.zeros((C.shape[0] - 1)).to(img.device)
     curve_steps = C.shape[0] - 1
+    #  C.shape -- torch.Size([16])
 
     """
     Compute the slope of the line segments
@@ -536,30 +531,25 @@ def apply_curve(img, C, slope_sqr_diff, channel_in, channel_out, clamp=False):
     """
     Use predicted line segments to compute scaling factors for the channel
     """
-    scale = float(C[0])
+    scale = torch.zeros_like(img[:, :, channel_in]) + float(C[0])
     for i in range(0, slope.shape[0] - 1):
-        if clamp:
-            scale += float(slope[i]) * (torch.clamp(img[:, :, channel_in] * curve_steps - i, 0, 1))
-        else:
-            scale += float(slope[i]) * (img[:, :, channel_in] * curve_steps - i)
+        scale += float(slope[i]) * (img[:, :, channel_in] * curve_steps - i)
 
     img_copy = img.clone()
 
     img_copy[:, :, channel_out] = img[:, :, channel_out] * scale
 
-    img_copy = torch.clamp(img_copy, 0, 1)
+    img_copy = torch.clamp(img_copy, 0.0, 1.0)
 
     return img_copy, slope_sqr_diff
 
 
-def adjust_hsv(img, S):
+def adjust_hsv(img, S) -> List[torch.Tensor]:
     """Adjust the HSV channels of a HSV image using learnt curves
 
     :param img: image to be adjusted
     :param S: predicted parameters of piecewise linear curves
     :returns: adjust image, regularisation term
-    :rtype: Tensor, float
-
     """
     img = img.squeeze(0).permute(2, 1, 0)
     shape = img.shape
@@ -570,7 +560,7 @@ def adjust_hsv(img, S):
     S3 = torch.exp(S[(int(S.shape[0] / 4) * 2) : (int(S.shape[0] / 4) * 3)])
     S4 = torch.exp(S[(int(S.shape[0] / 4) * 3) : (int(S.shape[0] / 4) * 4)])
 
-    slope_sqr_diff = torch.zeros(1).cuda()
+    slope_sqr_diff = torch.zeros(1).to(img.device)
 
     """
     Adjust Hue channel based on Hue using the predicted curve
@@ -603,14 +593,12 @@ def adjust_hsv(img, S):
     return img, slope_sqr_diff
 
 
-def adjust_rgb(img, R):
+def adjust_rgb(img, R) -> List[torch.Tensor]:
     """Adjust the RGB channels of a RGB image using learnt curves
 
     :param img: image to be adjusted
     :param S: predicted parameters of piecewise linear curves
     :returns: adjust image, regularisation term
-    :rtype: Tensor, float
-
     """
     img = img.squeeze(0).permute(2, 1, 0)
     shape = img.shape
@@ -626,7 +614,7 @@ def adjust_rgb(img, R):
     """
     Apply the curve to the R channel 
     """
-    slope_sqr_diff = torch.zeros(1).cuda()
+    slope_sqr_diff = torch.zeros(1).to(img.device)
 
     img_copy, slope_sqr_diff = apply_curve(img, R1, slope_sqr_diff, channel_in=0, channel_out=0)
 
@@ -651,14 +639,12 @@ def adjust_rgb(img, R):
     return img, slope_sqr_diff
 
 
-def adjust_lab(img, L):
+def adjust_lab(img, L) -> List[torch.Tensor]:
     """Adjusts the image in LAB space using the predicted curves
 
     :param img: Image tensor
     :param L: Predicited curve parameters for LAB channels
     :returns: adjust image, and regularisation parameter
-    :rtype: Tensor, float
-
     """
     img = img.permute(2, 1, 0)
 
@@ -672,7 +658,7 @@ def adjust_lab(img, L):
     L2 = torch.exp(L[(int(L.shape[0] / 3)) : (int(L.shape[0] / 3) * 2)])
     L3 = torch.exp(L[(int(L.shape[0] / 3) * 2) : (int(L.shape[0] / 3) * 3)])
 
-    slope_sqr_diff = torch.zeros(1).cuda()
+    slope_sqr_diff = torch.zeros(1).to(img.device)
 
     """
     Apply the curve to the L channel 
@@ -713,19 +699,10 @@ class LocalNet(nn.Module):
         x = self.lrelu(self.conv2(self.refpad(x)))
         return x
 
-
-class Block(nn.Module):
-    def __init__(self):
-        super(Block, self).__init__()
-
-    def conv3x3(self, in_channels, out_channels, stride=1):
-        return nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=True)
-
-
-class ConvBlock(Block, nn.Module):
+class ConvBlock(nn.Module):
     def __init__(self, num_in_channels, num_out_channels, stride=1):
-        super(Block, self).__init__()
-        self.conv = self.conv3x3(num_in_channels, num_out_channels, stride=2)
+        super(ConvBlock, self).__init__()
+        self.conv = nn.Conv2d(num_in_channels, num_out_channels, kernel_size=3, stride=2, padding=1, bias=True)
         self.lrelu = nn.LeakyReLU()
 
     def forward(self, x):
@@ -733,9 +710,9 @@ class ConvBlock(Block, nn.Module):
         return img_out
 
 
-class MaxPoolBlock(Block, nn.Module):
+class MaxPoolBlock(nn.Module):
     def __init__(self):
-        super(Block, self).__init__()
+        super(MaxPoolBlock, self).__init__()
         self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
     def forward(self, x):
@@ -743,9 +720,9 @@ class MaxPoolBlock(Block, nn.Module):
         return img_out
 
 
-class GlobalPoolingBlock(Block, nn.Module):
+class GlobalPoolingBlock(nn.Module):
     def __init__(self, receptive_field):
-        super(Block, self).__init__()
+        super(GlobalPoolingBlock, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
 
     def forward(self, x):
@@ -771,7 +748,7 @@ class CURLLayer(nn.Module):
         self.lab_layer7 = ConvBlock(64, 64)
         self.lab_layer8 = GlobalPoolingBlock(2)
 
-        self.fc_lab = torch.nn.Linear(64, 48)
+        self.fc_lab = nn.Linear(64, 48)
 
         self.dropout1 = nn.Dropout(0.5)
         self.dropout2 = nn.Dropout(0.5)
@@ -786,7 +763,7 @@ class CURLLayer(nn.Module):
         self.rgb_layer7 = ConvBlock(64, 64)
         self.rgb_layer8 = GlobalPoolingBlock(2)
 
-        self.fc_rgb = torch.nn.Linear(64, 48)
+        self.fc_rgb = nn.Linear(64, 48)
 
         self.hsv_layer1 = ConvBlock(64, 64)
         self.hsv_layer2 = MaxPoolBlock()
@@ -797,21 +774,20 @@ class CURLLayer(nn.Module):
         self.hsv_layer7 = ConvBlock(64, 64)
         self.hsv_layer8 = GlobalPoolingBlock(2)
 
-        self.fc_hsv = torch.nn.Linear(64, 64)
+        self.fc_hsv = nn.Linear(64, 64)
 
-    def forward(self, x):
+    def forward(self, x) -> List[torch.Tensor]:
         x.contiguous()  # remove memory holes
 
         img = x[:, 0:3, :, :]
         feat = x[:, 3:64, :, :]
 
-        torch.cuda.empty_cache()
         shape = x.shape
 
-        img_clamped = torch.clamp(img, 0, 1)
-        img_lab = torch.clamp(rgb_to_lab(img_clamped.squeeze(0)), 0, 1)
+        img_clamped = torch.clamp(img, 0.0, 1.0)
+        img_lab = torch.clamp(rgb_to_lab(img_clamped.squeeze(0)), 0.0, 1.0)
 
-        feat_lab = torch.cat((feat, img_lab.unsqueeze(0)), 1)
+        feat_lab = torch.cat((feat, img_lab.unsqueeze(0)), dim=1)
 
         x = self.lab_layer1(feat_lab)
         del feat_lab
@@ -828,9 +804,9 @@ class CURLLayer(nn.Module):
 
         img_lab, gradient_regulariser_lab = adjust_lab(img_lab.squeeze(0), L[0, 0:48])
         img_rgb = lab_to_rgb(img_lab.squeeze(0))
-        img_rgb = torch.clamp(img_rgb, 0, 1)
+        img_rgb = torch.clamp(img_rgb, 0.0, 1.0)
 
-        feat_rgb = torch.cat((feat, img_rgb.unsqueeze(0)), 1)
+        feat_rgb = torch.cat((feat, img_rgb.unsqueeze(0)), dim=1)
 
         x = self.rgb_layer1(feat_rgb)
         x = self.rgb_layer2(x)
@@ -845,10 +821,10 @@ class CURLLayer(nn.Module):
         R = self.fc_rgb(x)
 
         img_rgb, gradient_regulariser_rgb = adjust_rgb(img_rgb.squeeze(0), R[0, 0:48])
-        img_rgb = torch.clamp(img_rgb, 0, 1)
+        img_rgb = torch.clamp(img_rgb, 0.0, 1.0)
 
         img_hsv = rgb_to_hsv(img_rgb.squeeze(0))
-        img_hsv = torch.clamp(img_hsv, 0, 1)
+        img_hsv = torch.clamp(img_hsv, 0.0, 1.0)
         feat_hsv = torch.cat((feat, img_hsv.unsqueeze(0)), 1)
 
         x = self.hsv_layer1(feat_hsv)
@@ -865,11 +841,11 @@ class CURLLayer(nn.Module):
         H = self.fc_hsv(x)
 
         img_hsv, gradient_regulariser_hsv = adjust_hsv(img_hsv, H[0, 0:64])
-        img_hsv = torch.clamp(img_hsv, 0, 1)
+        img_hsv = torch.clamp(img_hsv, 0.0, 1.0)
 
-        img_residual = torch.clamp(hsv_to_rgb(img_hsv.squeeze(0)), 0, 1)
+        img_residual = torch.clamp(hsv_to_rgb(img_hsv.squeeze(0)), 0.0, 1.0)
 
-        img = torch.clamp(img + img_residual.unsqueeze(0), 0, 1)
+        img = torch.clamp(img + img_residual.unsqueeze(0), 0.0, 1.0)
 
         gradient_regulariser = gradient_regulariser_rgb + gradient_regulariser_lab + gradient_regulariser_hsv
 
