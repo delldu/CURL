@@ -389,7 +389,7 @@ def hsv_to_rgb(img):
     m4 = 0.0
 
     g = (
-        img[:, :, 2] * (1 - img[:, :, 1])
+        img[:, :, 2] * (1.0 - img[:, :, 1])
         + torch.clamp(img[:, :, 0] * 360.0 - 0.0, 0.0, 60.0) * m1
         + torch.clamp(img[:, :, 0] * 360.0 - 60.0, 0.0, 120.0) * m2
         + torch.clamp(img[:, :, 0] * 360.0 - 180.0, 0.0, 60.0) * m3
@@ -464,9 +464,9 @@ def rgb_to_hsv(img):
     df = df.to(img.device)
     mx = mx.to(img.device)
 
+    r = img[:, :, 0].clone()
     g = img[:, :, 1].clone()
     b = img[:, :, 2].clone()
-    r = img[:, :, 0].clone()
 
     img_copy = img.clone()
 

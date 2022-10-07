@@ -1,6 +1,6 @@
 ## README
 
-Image/Video curl package 1.0.0
+Image/Video curve package 1.0.0
 
 ### How to use ?
     demo.py is answer.

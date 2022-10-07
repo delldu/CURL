@@ -15,16 +15,16 @@ with open("README.md", "r") as file:
     long_description = file.read()
 
 setup(
-    name="image_curl",
+    name="image_curve",
     version="1.0.0",
     author="Dell Du",
     author_email="18588220928@163.com",
-    description="image/video curl package",
+    description="image/video curve package",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/delldu/CURL.git",
-    packages=["image_curl"],
-    package_data={"image_curl": ["models/image_curl.pth"]},
+    packages=["image_curve"],
+    package_data={"image_curve": ["models/image_curve.pth"]},
     include_package_data=True,
     classifiers=[
         "Programming Language :: Python :: 3",

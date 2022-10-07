@@ -13,7 +13,7 @@ install:
 	python setup.py install
 
 uninstall:
-	pip uninstall image_curl
+	pip uninstall image_curve
 
 clean:
-	rm -rf build dist image_curl.egg-info __pycache__
+	rm -rf build dist image_curve.egg-info __pycache__

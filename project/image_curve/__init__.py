@@ -1,4 +1,4 @@
-"""Image/Video CURL Package."""  # coding=utf-8
+"""Image/Video Curve Package."""  # coding=utf-8
 #
 # /************************************************************************************
 # ***
@@ -19,7 +19,7 @@ import torch
 import redos
 import todos
 
-from . import curl
+from . import curve
 
 import pdb
 
@@ -27,11 +27,11 @@ import pdb
 def get_model():
     """Create model."""
 
-    model_path = "models/image_curl.pth"
+    model_path = "models/image_curve.pth"
     cdir = os.path.dirname(__file__)
     checkpoint = model_path if cdir == "" else cdir + "/" + model_path
 
-    model = curl.CURLNet()
+    model = curve.CURLNet()
     todos.model.load(model, checkpoint)
     device = todos.model.get_device()
     model = model.to(device)
@@ -41,8 +41,8 @@ def get_model():
     model = torch.jit.script(model)
 
     todos.data.mkdir("output")
-    if not os.path.exists("output/image_curl.torch"):
-        model.save("output/image_curl.torch")
+    if not os.path.exists("output/image_curve.torch"):
+        model.save("output/image_curve.torch")
 
     return model, device
 
@@ -53,10 +53,7 @@ def model_forward(model, device, input_tensor, multi_times=1):
     if H % multi_times != 0 or W % multi_times != 0:
         input_tensor = todos.data.zeropad_tensor(input_tensor, times=multi_times)
 
-    torch.cuda.synchronize()
-    with torch.jit.optimized_execution(False):
-        output_tensor = todos.model.forward(model, device, input_tensor)
-    torch.cuda.synchronize()
+    output_tensor = todos.model.forward(model, device, input_tensor)
 
     return output_tensor[:, :, 0:H, 0:W]
 
@@ -67,7 +64,7 @@ def image_client(name, input_files, output_dir):
     image_filenames = todos.data.load_files(input_files)
     for filename in image_filenames:
         output_file = f"{output_dir}/{os.path.basename(filename)}"
-        context = cmd.curl(filename, output_file)
+        context = cmd.curve(filename, output_file)
         redo.set_queue_task(context)
     print(f"Created {len(image_filenames)} tasks for {name}.")
 
@@ -77,7 +74,7 @@ def image_server(name, host="localhost", port=6379):
     model, device = get_model()
 
     def do_service(input_file, output_file, targ):
-        print(f"  curl {input_file} ...")
+        print(f"  curve {input_file} ...")
         try:
             input_tensor = todos.data.load_tensor(input_file)
             output_tensor = model_forward(model, device, input_tensor)
@@ -87,7 +84,7 @@ def image_server(name, host="localhost", port=6379):
             print("exception: ", e)
             return False
 
-    return redos.image.service(name, "image_curl", do_service, host, port)
+    return redos.image.service(name, "image_curve", do_service, host, port)
 
 
 def image_predict(input_files, output_dir):
@@ -112,8 +109,9 @@ def image_predict(input_files, output_dir):
         orig_tensor = input_tensor.clone().detach()
         predict_tensor = model_forward(model, device, input_tensor)
         output_file = f"{output_dir}/{os.path.basename(filename)}"
-
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
+
+    todos.model.reset_device()
 
 
 def video_service(input_file, output_file, targ):
@@ -130,10 +128,10 @@ def video_service(input_file, output_file, targ):
     # load model
     model, device = get_model()
 
-    print(f"  curl {input_file}, save to {output_file} ...")
+    print(f"  curve {input_file}, save to {output_file} ...")
     progress_bar = tqdm(total=video.n_frames)
 
-    def curl_video_frame(no, data):
+    def curve_video_frame(no, data):
         # print(f"frame: {no} -- {data.shape}")
         progress_bar.update(1)
 
@@ -146,7 +144,7 @@ def video_service(input_file, output_file, targ):
         temp_output_file = "{}/{:06d}.png".format(output_dir, no)
         todos.data.save_tensor(output_tensor, temp_output_file)
 
-    video.forward(callback=curl_video_frame)
+    video.forward(callback=curve_video_frame)
 
     redos.video.encode(output_dir, output_file)
 
@@ -160,11 +158,11 @@ def video_service(input_file, output_file, targ):
 
 def video_client(name, input_file, output_file):
     cmd = redos.video.Command()
-    context = cmd.curl(input_file, output_file)
+    context = cmd.curve(input_file, output_file)
     redo = redos.Redos(name)
     redo.set_queue_task(context)
     print(f"Created 1 video tasks for {name}.")
 
 
 def video_server(name, host="localhost", port=6379):
-    return redos.video.service(name, "video_curl", video_service, host, port)
+    return redos.video.service(name, "video_curve", video_service, host, port)
