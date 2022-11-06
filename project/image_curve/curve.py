@@ -21,6 +21,11 @@ import pdb
 class CURLNet(nn.Module):
     def __init__(self):
         super(CURLNet, self).__init__()
+        # Define max GPU/CPU memory -- 4G
+        self.MAX_H = 1024
+        self.MAX_W = 1024
+        self.MAX_TIMES = 16
+
         self.tednet = TEDModel()
         self.curllayer = CURLLayer()
 
@@ -37,48 +42,37 @@ class CURLNet(nn.Module):
         return img.clamp(0, 1.0)
 
     def forward(self, x):
-        # Define max GPU/CPU memory -- 2G
-        max_h = 1024
-        max_W = 1024
-        multi_times = 1
-
         # Need Resize ?
         B, C, H, W = x.size()
-        if H > max_h or W > max_W:
-            s = min(max_h / H, max_W / W)
+        if H > self.MAX_H or W > self.MAX_W:
+            s = min(self.MAX_H / H, self.MAX_W / W)
             SH, SW = int(s * H), int(s * W)
             resize_x = F.interpolate(x, size=(SH, SW), mode="bilinear", align_corners=False)
         else:
             resize_x = x
 
-        # Need Zero Pad ?
-        ZH, ZW = resize_x.size(2), resize_x.size(3)
-        if ZH % multi_times != 0 or ZW % multi_times != 0:
-            NH = multi_times * math.ceil(ZH / multi_times)
-            NW = multi_times * math.ceil(ZW / multi_times)
-            resize_zeropad_x = resize_x.new_zeros(B, C, NH, NW)
-            resize_zeropad_x[:, :, 0:ZH, 0:ZW] = resize_x
+        # Need Pad ?
+        PH, PW = resize_x.size(2), resize_x.size(3)
+        if PH % self.MAX_TIMES != 0 or PW % self.MAX_TIMES != 0:
+            r_pad = self.MAX_TIMES - (PW % self.MAX_TIMES)
+            b_pad = self.MAX_TIMES - (PH % self.MAX_TIMES)
+            resize_pad_x = F.pad(resize_x, (0, r_pad, 0, b_pad), mode="replicate")
         else:
-            resize_zeropad_x = resize_x
+            resize_pad_x = resize_x
 
-        # MS Begin
-        y = self.forward_x(resize_zeropad_x).cpu()
-        del resize_zeropad_x, resize_x # Release memory !!!
+        y = self.forward_x(resize_pad_x)
 
-        y = y[:, :, 0 : ZH, 0 : ZW]  # Remove Zero Pads
-        if ZH != H or ZW != W:
-            y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)
-        # MS End
+        y = y[:, :, 0:PH, 0:PW]  # Remove Pads
+        y = F.interpolate(y, size=(H, W), mode="bilinear", align_corners=False)  # Remove Resize
 
         return y
-
-
 
 
 class TEDModel(nn.Module):
     """
     TED -- Transformed Encoder Decoder
     """
+
     def __init__(self):
         super(TEDModel, self).__init__()
 
@@ -137,7 +131,7 @@ class Flatten(nn.Module):
 
 
 class TED(nn.Module):
-    '''TED -- Transformed Encoder Decoder'''
+    """TED -- Transformed Encoder Decoder"""
 
     def __init__(self):
         super(TED, self).__init__()
@@ -201,41 +195,14 @@ class TED(nn.Module):
         x = self.dconv_down5(x)
         x = self.up_conv1x1_1(self.upsample(x))
 
-        if x.shape[3] != conv4.shape[3] and x.shape[2] != conv4.shape[2]:
-            x = F.pad(x, (1, 0, 0, 1))
-        elif x.shape[2] != conv4.shape[2]:
-            x = F.pad(x, (0, 0, 0, 1))
-        elif x.shape[3] != conv4.shape[3]:
-            x = F.pad(x, (1, 0, 0, 0))
-
-        del conv4
-
         x = self.dconv_up4(x)
         x = self.up_conv1x1_2(self.upsample(x))
-
-        if x.shape[3] != conv3.shape[3] and x.shape[2] != conv3.shape[2]:
-            x = F.pad(x, (1, 0, 0, 1))
-        elif x.shape[2] != conv3.shape[2]:
-            x = F.pad(x, (0, 0, 0, 1))
-        elif x.shape[3] != conv3.shape[3]:
-            x = F.pad(x, (1, 0, 0, 0))
 
         x = self.dconv_up3(x)
         x = self.up_conv1x1_3(self.upsample(x))
 
-        del conv3
-
-        if x.shape[3] != conv2.shape[3] and x.shape[2] != conv2.shape[2]:
-            x = F.pad(x, (1, 0, 0, 1))
-        elif x.shape[2] != conv2.shape[2]:
-            x = F.pad(x, (0, 0, 0, 1))
-        elif x.shape[3] != conv2.shape[3]:
-            x = F.pad(x, (1, 0, 0, 0))
-
         x = self.dconv_up2(x)
         x = self.up_conv1x1_4(self.upsample(x))
-
-        del conv2
 
         mid_features1 = self.mid_net2_1(conv1)
         mid_features2 = self.mid_net4_1(conv1)
@@ -246,15 +213,7 @@ class TED(nn.Module):
         fuse = torch.cat((conv1, mid_features1, mid_features2, glob_features), dim=1)
         conv1_fuse = self.conv_fuse1(fuse)
 
-        if x.shape[3] != conv1.shape[3] and x.shape[2] != conv1.shape[2]:
-            x = F.pad(x, (1, 0, 0, 1))
-        elif x.shape[2] != conv1.shape[2]:
-            x = F.pad(x, (0, 0, 0, 1))
-        elif x.shape[3] != conv1.shape[3]:
-            x = F.pad(x, (1, 0, 0, 0))
-
         x = torch.cat([x, conv1_fuse], dim=1)
-        del conv1
 
         x = self.dconv_up1(x)
 
@@ -265,11 +224,6 @@ class TED(nn.Module):
 
 
 def rgb_to_lab(img):
-    """PyTorch implementation of RGB to LAB conversion: https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
-    Based roughly on a similar implementation here: https://github.com/affinelayer/pix2pix-tensorflow/blob/master/pix2pix.py
-    :param img: image to be adjusted
-    :returns: adjusted image
-    """
     # img.size() -- [3, 341, 512]
 
     img = img.permute(2, 1, 0).contiguous()
@@ -319,17 +273,12 @@ def rgb_to_lab(img):
     img[2, :, :] = (img[2, :, :] / 110.0 + 1.0) / 2.0
 
     # img[(img != img).detach()] = 0
-    img = img.contiguous() # img.size() -- [3, 341, 512]
+    img = img.contiguous()  # img.size() -- [3, 341, 512]
 
     return img
 
 
 def lab_to_rgb(img):
-    """https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
-    Based roughly on a similar implementation here: https://github.com/affinelayer/pix2pix-tensorflow/blob/master/pix2pix.py
-    :param img: image to be adjusted
-    :returns: adjusted image
-    """
     # img.size() -- [3, 341, 512]
     # img.min(), img.max() -- 0., 0.6350
 
@@ -385,13 +334,6 @@ def lab_to_rgb(img):
 
 
 def hsv_to_rgb(img):
-    """
-    https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
-    Based roughly on a similar implementation here: http://code.activestate.com/recipes/576919-python-rgb-and-hsv-conversion/
-
-    :param img: HSV image
-    :returns: RGB image
-    """
     # img.size() -- [3, 341, 512]
 
     img = torch.clamp(img, 0, 1).permute(2, 1, 0)
@@ -445,13 +387,6 @@ def hsv_to_rgb(img):
 
 
 def rgb_to_hsv(img):
-    """
-    https://docs.opencv.org/3.3.0/de/d25/imgproc_color_conversions.html
-    Based roughly on a similar implementation here: http://code.activestate.com/recipes/576919-python-rgb-and-hsv-conversion/
-
-    :param img: RGB image
-    :returns: HSV image
-    """
     # img.size() -- [3, 341, 512]
 
     img = img.clamp(0.0, 1.0).permute(2, 1, 0)

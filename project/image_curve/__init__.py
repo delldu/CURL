@@ -21,7 +21,7 @@ from . import curve
 import pdb
 
 
-def get_model():
+def get_curve_model():
     """Create model."""
 
     model_path = "models/image_curve.pth"
@@ -49,7 +49,7 @@ def image_predict(input_files, output_dir):
     todos.data.mkdir(output_dir)
 
     # load model
-    model, device = get_model()
+    model, device = get_curve_model()
 
     # load files
     image_filenames = todos.data.load_files(input_files)
@@ -69,4 +69,3 @@ def image_predict(input_files, output_dir):
         todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
 
     todos.model.reset_device()
-
