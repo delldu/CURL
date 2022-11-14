@@ -36,7 +36,8 @@ def predict(input_files, output_dir):
     todos.data.mkdir(output_dir)
 
     # load model
-    tvm_model = todos.tvmod.load("output/image_curve.so", "cuda")
+    device = todos.model.get_device()
+    tvm_model = todos.tvmod.load("output/image_curve.so", str(device))
 
     # load files
     image_filenames = todos.data.load_files(input_files)

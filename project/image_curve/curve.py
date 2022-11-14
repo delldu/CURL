@@ -24,8 +24,9 @@ class CURLNet(nn.Module):
         super(CURLNet, self).__init__()
         # Define max GPU/CPU memory -- 4G
         self.MAX_H = 1024
-        self.MAX_W = 1024
+        self.MAX_W = 2048
         self.MAX_TIMES = 16
+        # GPU 9G, 270ms
 
         self.tednet = TEDModel()
         self.curllayer = CURLLayer()
