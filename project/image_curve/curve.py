@@ -356,35 +356,49 @@ def rgb_to_hsv(img):
     # img.size() -- [3, 341, 512]
 
     img = img.clamp(0.0, 1.0).permute(2, 1, 0)
-    shape = img.shape
+    W, H, C = img.size()
 
-    img = img.contiguous().view(-1, 3)
+    shape = img.shape # [512, 352, 3]
 
-    mx = torch.max(img, 1)[0]
-    mn = torch.min(img, 1)[0]
+    img = img.contiguous().view(-1, 3) # size() -- [512 * 352, 3]
 
-    ones = torch.ones(img.shape[0]).to(img.device)
-    zero = torch.zeros(shape[0:2]).to(img.device)
+    mx = torch.max(img, dim=1)[0]
+    mn = torch.min(img, dim=1)[0]
 
-    img = img.view(shape)
+    # ones = torch.ones(img.shape[0]).to(img.device) # size() -- [180224]
+    # zero = torch.zeros(shape[0:2]).to(img.device) # size() -- [512, 352]
 
-    ones1 = ones[0 : math.floor((ones.shape[0] / 2))]
-    ones2 = ones[math.floor(ones.shape[0] / 2) : (ones.shape[0])]
 
-    mx1 = mx[0 : math.floor((ones.shape[0] / 2))]
-    mx2 = mx[math.floor(ones.shape[0] / 2) : (ones.shape[0])]
-    mn1 = mn[0 : math.floor((ones.shape[0] / 2))]
-    mn2 = mn[math.floor(ones.shape[0] / 2) : (ones.shape[0])]
+    # img = img.view(shape)
+    img = img.view(W, H, C)
+
+    # ones1 = ones[0 : math.floor((ones.shape[0] / 2))] # size() -- [90112]
+    # ones2 = ones[math.floor(ones.shape[0] / 2) : (ones.shape[0])] # size() -- [90112]
+
+    # mx1 = mx[0 : math.floor((ones.shape[0] / 2))] # size() -- [90112]
+    # mx2 = mx[math.floor(ones.shape[0] / 2) : (ones.shape[0])] # size() -- [90112]
+    # mn1 = mn[0 : math.floor((ones.shape[0] / 2))] # size() -- [90112]
+    # mn2 = mn[math.floor(ones.shape[0] / 2) : (ones.shape[0])] # size() -- [90112]
+
+    ones = torch.ones(W * H).to(img.device) # size() -- [180224]
+    ones1 = ones[0 : (W*H)//2] # size() -- [90112]
+    ones2 = ones[(W*H) // 2 : W*H] # size() -- [90112]
+
+    mx1 = mx[0 : (W *H)//2] # size() -- [90112]
+    mx2 = mx[(W * H)//2 : W*H] # size() -- [90112]
+    mn1 = mn[0 : (W * H)//2] # size() -- [90112]
+    mn2 = mn[(W*H)//2 : W*H] # size() -- [90112]
 
     df1 = torch.add(mx1, torch.mul(ones1 * -1, mn1))
     df2 = torch.add(mx2, torch.mul(ones2 * -1, mn2))
 
-    # pdb.set_trace()
-
-    df = torch.cat((df1, df2), dim=0)
+    df = torch.cat((df1, df2), dim=0) # size() -- [180224]
     del df1, df2
-    df = df.view(shape[0:2]) + 1e-10
-    mx = mx.view(shape[0:2])
+    # df = df.view(shape[0:2]) + 1e-10
+    # mx = mx.view(shape[0:2]) # size() -- [512, 352]
+
+    df = df.view(W, H) + 1e-10
+    mx = mx.view(W, H) # size() -- [512, 352]
 
     df = df.to(img.device)
     mx = mx.to(img.device)
@@ -394,26 +408,21 @@ def rgb_to_hsv(img):
     b = img[:, :, 2].clone()
 
     img_copy = img.clone()
-
     img_copy[:, :, 0] = (
         ((g - b) / df) * r.eq(mx).float()
         + (2.0 + (b - r) / df) * g.eq(mx).float()
         + (4.0 + (r - g) / df) * b.eq(mx).float()
     )
     img_copy[:, :, 0] = img_copy[:, :, 0] * 60.0
+    del r, g, b
 
-    img_copy2 = img_copy.clone()
-    img_copy2[:, :, 0] = (
-        img_copy[:, :, 0].lt(zero).float() * (img_copy[:, :, 0] + 360)
-        + img_copy[:, :, 0].ge(zero).float() * img_copy[:, :, 0]
-    )
-    img_copy2[:, :, 0] = img_copy2[:, :, 0] / 360.0
-
-    del img, r, g, b
-
-    img_copy2[:, :, 1] = mx.ne(zero).float() * (df / mx) + mx.eq(zero).float() * (zero)
-    img_copy2[:, :, 2] = mx
-    img = img_copy2.clone().permute(2, 1, 0)
+    r = img_copy[:, :, 0]
+    zero = torch.zeros(W, H).to(img.device) # size() -- [512, 352]
+    img_copy[:, :, 0] = r.lt(zero).float() * (r + 360.0) + r.ge(zero).float() * r
+    img_copy[:, :, 0] = img_copy[:, :, 0] / 360.0
+    img_copy[:, :, 1] = mx.ne(zero).float() * (df / mx) + mx.eq(zero).float() * (zero)
+    img_copy[:, :, 2] = mx
+    img = img_copy.clone().permute(2, 1, 0)
 
     return img.clamp(0.0, 1.0)
 
@@ -447,16 +456,20 @@ def adjust_hsv(img, S):
     S4 = torch.exp(S[S_4 * 3 : S_4 * 4])
 
     # Adjust Hue channel based on Hue using the predicted curve
-    img = apply_curve(img, S1, channel_in=0, channel_out=0)
+    # img = apply_curve(img, S1, channel_in=0, channel_out=0)
+    apply_curve(img, S1, channel_in=0, channel_out=0)
 
     # Adjust Saturation channel based on Hue using the predicted curve
-    img = apply_curve(img, S2, channel_in=0, channel_out=1)
+    # img = apply_curve(img, S2, channel_in=0, channel_out=1)
+    apply_curve(img, S2, channel_in=0, channel_out=1)
 
     # Adjust Saturation channel based on Saturation using the predicted curve
-    img = apply_curve(img, S3, channel_in=1, channel_out=1)
+    # img = apply_curve(img, S3, channel_in=1, channel_out=1)
+    apply_curve(img, S3, channel_in=1, channel_out=1)
 
     # Adjust Value channel based on Value using the predicted curve
-    img = apply_curve(img, S4, channel_in=2, channel_out=2)
+    # img = apply_curve(img, S4, channel_in=2, channel_out=2)
+    apply_curve(img, S4, channel_in=2, channel_out=2)
 
     img = img.permute(2, 1, 0).contiguous()
 
@@ -476,13 +489,16 @@ def adjust_rgb(img, R):
     R3 = torch.exp(R[R_3 * 2 : R_3 * 3])
 
     # Apply the curve to the R channel 
-    img = apply_curve(img, R1, channel_in=0, channel_out=0)
+    # img = apply_curve(img, R1, channel_in=0, channel_out=0)
+    apply_curve(img, R1, channel_in=0, channel_out=0)
 
     # Apply the curve to the G channel 
-    img = apply_curve(img, R2, channel_in=1, channel_out=1)
+    # img = apply_curve(img, R2, channel_in=1, channel_out=1)
+    apply_curve(img, R2, channel_in=1, channel_out=1)
 
     # Apply the curve to the B channel 
-    img = apply_curve(img, R3, channel_in=2, channel_out=2)
+    # img = apply_curve(img, R3, channel_in=2, channel_out=2)
+    apply_curve(img, R3, channel_in=2, channel_out=2)
 
     img = img.permute(2, 1, 0).contiguous()
 
@@ -501,13 +517,16 @@ def adjust_lab(img, L):
     L3 = torch.exp(L[L_3 * 2 : L_3 * 3])
 
     # Apply the curve to the L channel 
-    img = apply_curve(img, L1, channel_in=0, channel_out=0)
+    # img = apply_curve(img, L1, channel_in=0, channel_out=0)
+    apply_curve(img, L1, channel_in=0, channel_out=0)
 
     # Now do the same for the a channel
-    img = apply_curve(img, L2, channel_in=1, channel_out=1)
+    # img = apply_curve(img, L2, channel_in=1, channel_out=1)
+    apply_curve(img, L2, channel_in=1, channel_out=1)
 
     # Now do the same for the b channel
-    img = apply_curve(img, L3, channel_in=2, channel_out=2)
+    # img = apply_curve(img, L3, channel_in=2, channel_out=2)
+    apply_curve(img, L3, channel_in=2, channel_out=2)
 
     img = img.permute(2, 1, 0).contiguous()
 
@@ -558,7 +577,6 @@ class GlobalPoolingBlock(nn.Module):
 class CURLLayer(nn.Module):
     def __init__(self, in_channels=64, out_channels=64):
         super().__init__()
-
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.make_init_network()
