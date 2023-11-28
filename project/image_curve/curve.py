@@ -101,11 +101,6 @@ class MidNet4(nn.Module):
         return x
 
 
-class Flatten(nn.Module):
-    def forward(self, x):
-        return x.view(x.size()[0], -1)
-
-
 class TED(nn.Module):
     """TED -- Transformed Encoder Decoder"""
 
@@ -181,8 +176,8 @@ class TED(nn.Module):
         mid_features1 = self.mid_net2_1(conv1)
         mid_features2 = self.mid_net4_1(conv1)
         glob_features = self.glob_net1(conv1)
-        glob_features = glob_features.unsqueeze(2)
-        glob_features = glob_features.unsqueeze(3)
+        glob_features = glob_features.unsqueeze(2).unsqueeze(3)
+
         glob_features = glob_features.repeat(1, 1, mid_features1.shape[2], mid_features1.shape[3])
         fuse = torch.cat((conv1, mid_features1, mid_features2, glob_features), dim=1)
         conv1_fuse = self.conv_fuse1(fuse)
@@ -204,9 +199,10 @@ def rgb_to_lab(img):
     shape = img.shape
     img = img.view(-1, 3)
 
-    img = (img / 12.92) * img.le(0.04045).float() + (((torch.clamp(img, min=0.0001) + 0.055) / 1.055) ** 2.4) * img.gt(
-        0.04045
-    ).float()
+    img = (
+        (img / 12.92) * img.le(0.04045).float()
+        + (((torch.clamp(img, min=0.0001) + 0.055) / 1.055) ** 2.4) * img.gt(0.04045).float()
+    )
 
     rgb_to_xyz = torch.tensor(
         [  # X        Y          Z
@@ -221,8 +217,9 @@ def rgb_to_lab(img):
 
     epsilon = 6.0 / 29.0
 
-    img = ((img / (3.0 * epsilon ** 2) + 4.0 / 29.0) * img.le(epsilon ** 3).float()) + (
-        torch.clamp(img, min=0.0001) ** (1.0 / 3.0) * img.gt(epsilon ** 3).float()
+    img = (
+        (img / (3.0 * epsilon ** 2) + 4.0 / 29.0) * (img.le(epsilon ** 3).float())
+        + (torch.clamp(img, min=0.0001) ** (1.0 / 3.0) * (img.gt(epsilon ** 3).float()))
     )
 
     fxfyfz_to_lab = torch.tensor(
@@ -279,9 +276,10 @@ def lab_to_rgb(img):
     img = torch.matmul(img + torch.tensor([16.0, 0.0, 0.0]).to(img.device), lab_to_fxfyfz)
 
     epsilon = 6.0 / 29.0
-    img = (3.0 * epsilon ** 2 * (img - 4.0 / 29.0)) * img.le(epsilon).float() + (
-        (torch.clamp(img, min=0.0001) ** 3.0) * img.gt(epsilon).float()
-    )
+    img = (
+            (3.0 * epsilon ** 2 * (img - 4.0 / 29.0)) * img.le(epsilon).float()
+             + (torch.clamp(img, min=0.0001) ** 3.0) * img.gt(epsilon).float()
+        )
 
     # denormalize for D65 white point
     img = torch.mul(img, torch.tensor([0.950456, 1.0, 1.088754]).to(img.device))
@@ -296,9 +294,10 @@ def lab_to_rgb(img):
 
     img = torch.matmul(img, xyz_to_rgb)
 
-    img = (img * 12.92 * img.le(0.0031308).float()) + (
-        (torch.clamp(img, min=0.0001) ** (1.0 / 2.4) * 1.055) - 0.055
-    ) * img.gt(0.0031308).float()
+    img = (
+            (img * 12.92 * img.le(0.0031308).float())
+            + ((torch.clamp(img, min=0.0001) ** (1.0 / 2.4) * 1.055) - 0.055) * img.gt(0.0031308).float()
+        )
 
     img = img.view(shape)
     img = img.permute(2, 1, 0).contiguous()
@@ -312,11 +311,11 @@ def hsv_to_rgb(img):
 
     img = torch.clamp(img, 0, 1).permute(2, 1, 0)
 
-    m1 = 0
-    m2 = (img[:, :, 2] * (1 - img[:, :, 1]) - img[:, :, 2]) / 60
-    m3 = 0
-    m4 = -1 * m2
-    m5 = 0
+    m1 = 0.0
+    m2 = (img[:, :, 2] * (1 - img[:, :, 1]) - img[:, :, 2]) / 60.0
+    m3 = 0.0
+    m4 = -1.0 * m2
+    m5 = 0.0
 
     r = (
         img[:, :, 2]
@@ -327,7 +326,7 @@ def hsv_to_rgb(img):
         + torch.clamp(img[:, :, 0] * 360.0 - 300.0, 0.0, 60.0) * m5
     )
 
-    m1 = (img[:, :, 2] - img[:, :, 2] * (1.0 - img[:, :, 1])) / 60
+    m1 = (img[:, :, 2] - img[:, :, 2] * (1.0 - img[:, :, 1])) / 60.0
     m2 = 0.0
     m3 = -1.0 * m1
     m4 = 0.0
@@ -446,7 +445,6 @@ def apply_curve(img, C, channel_in: int, channel_out: int):
     for i in range(0, C.shape[0] - 1):
         slope[i] = C[i + 1] - C[i]
 
-
     """
     Use predicted line segments to compute scaling factors for the channel
     """
@@ -477,24 +475,16 @@ def adjust_hsv(img, S):
     S3 = torch.exp(S[(int(S.shape[0] / 4) * 2) : (int(S.shape[0] / 4) * 3)])
     S4 = torch.exp(S[(int(S.shape[0] / 4) * 3) : (int(S.shape[0] / 4) * 4)])
 
-    """
-    Adjust Hue channel based on Hue using the predicted curve
-    """
+    # Adjust Hue channel based on Hue using the predicted curve
     img_copy = apply_curve(img, S1, channel_in=0, channel_out=0)
 
-    """
-    Adjust Saturation channel based on Hue using the predicted curve
-    """
+    # Adjust Saturation channel based on Hue using the predicted curve
     img_copy = apply_curve(img_copy, S2, channel_in=0, channel_out=1)
 
-    """
-    Adjust Saturation channel based on Saturation using the predicted curve
-    """
+    # Adjust Saturation channel based on Saturation using the predicted curve
     img_copy = apply_curve(img_copy, S3, channel_in=1, channel_out=1)
 
-    """
-    Adjust Value channel based on Value using the predicted curve
-    """
+    # Adjust Value channel based on Value using the predicted curve
     img_copy = apply_curve(img_copy, S4, channel_in=2, channel_out=2)
 
     img = img_copy.clone()
@@ -524,19 +514,13 @@ def adjust_rgb(img, R):
     R2 = torch.exp(R[(int(R.shape[0] / 3)) : (int(R.shape[0] / 3) * 2)])
     R3 = torch.exp(R[(int(R.shape[0] / 3) * 2) : (int(R.shape[0] / 3) * 3)])
 
-    """
-    Apply the curve to the R channel 
-    """
+    # Apply the curve to the R channel 
     img_copy = apply_curve(img, R1, channel_in=0, channel_out=0)
 
-    """
-    Apply the curve to the G channel 
-    """
+    # Apply the curve to the G channel 
     img_copy = apply_curve(img_copy, R2, channel_in=1, channel_out=1)
 
-    """
-    Apply the curve to the B channel 
-    """
+    # Apply the curve to the B channel 
     img_copy = apply_curve(img_copy, R3, channel_in=2, channel_out=2)
 
     img = img_copy.clone()
@@ -565,19 +549,13 @@ def adjust_lab(img, L):
     L2 = torch.exp(L[(int(L.shape[0] / 3)) : (int(L.shape[0] / 3) * 2)])
     L3 = torch.exp(L[(int(L.shape[0] / 3) * 2) : (int(L.shape[0] / 3) * 3)])
 
-    """
-    Apply the curve to the L channel 
-    """
+    # Apply the curve to the L channel 
     img_copy = apply_curve(img, L1, channel_in=0, channel_out=0)
 
-    """
-    Now do the same for the a channel
-    """
+    # Now do the same for the a channel
     img_copy = apply_curve(img_copy, L2, channel_in=1, channel_out=1)
 
-    """
-    Now do the same for the b channel
-    """
+    # Now do the same for the b channel
     img_copy = apply_curve(img_copy, L3, channel_in=2, channel_out=2)
 
     img = img_copy.clone()
