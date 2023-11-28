@@ -25,7 +25,7 @@ class CURLNet(nn.Module):
         self.MAX_H = 1024
         self.MAX_W = 1024
         self.MAX_TIMES = 16
-        # GPU 9G, 270ms
+        # GPU 4G, 150ms
 
         self.tednet = TEDModel()
         self.curllayer = CURLLayer()
@@ -38,7 +38,6 @@ class CURLNet(nn.Module):
 
 
     def forward(self, img):
-        # img.size() -- [1, 3, 341, 512]
         feat = self.tednet(img)
         img = self.curllayer(feat)
 
@@ -51,7 +50,6 @@ class TEDModel(nn.Module):
     """
     def __init__(self):
         super().__init__()
-
         self.ted = TED()
         self.final_conv = nn.Conv2d(3, 64, 3, 1, 0, 1)
         self.refpad = nn.ReflectionPad2d(1)
@@ -111,8 +109,8 @@ class TED(nn.Module):
         self.conv2 = nn.Conv2d(32, 64, 1)
         self.conv3 = nn.Conv2d(64, 64, 1)
 
-        self.mid_net2_1 = MidNet2(in_channels=16)
-        self.mid_net4_1 = MidNet4(in_channels=16)
+        self.mid_net2_1 = MidNet2()
+        self.mid_net4_1 = MidNet4()
         self.local_net = LocalNet(16) # useless
 
         self.dconv_down1 = LocalNet(3, 16)
@@ -195,8 +193,8 @@ def rgb_to_lab(img):
     # img.size() -- [3, 341, 512]
 
     img = img.permute(2, 1, 0).contiguous()
-    shape = img.shape
-    img = img.view(-1, 3)
+    W, H, C = img.size()
+    img = img.view(W * H, 3)
 
     img = (
         (img / 12.92) * img.le(0.04045).float()
@@ -230,7 +228,7 @@ def rgb_to_lab(img):
 
     img = torch.matmul(img, fxfyfz_to_lab) + torch.tensor([-16.0, 0.0, 0.0]).to(img.device)
 
-    img = img.view(shape).permute(2, 1, 0)
+    img = img.view(W, H, C).permute(2, 1, 0)
 
     """
     L_chan: black and white with input range [0, 100]
@@ -251,9 +249,9 @@ def lab_to_rgb(img):
     # img.min(), img.max() -- 0., 0.6350
 
     img = img.permute(2, 1, 0).contiguous()
-
-    shape = img.shape
-    img = img.view(-1, 3)
+    W, H, C = img.size()
+    # shape = img.shape
+    img = img.view(W * H, 3)
 
     img[:, 0] = img[:, 0] * 100.0
     img[:, 1] = ((img[:, 1] * 2.0) - 1.0) * 110.0
@@ -295,7 +293,7 @@ def lab_to_rgb(img):
             + ((torch.clamp(img, min=0.0001) ** (1.0 / 2.4) * 1.055) - 0.055) * img.gt(0.0031308).float()
         )
 
-    img = img.view(shape).permute(2, 1, 0).contiguous()
+    img = img.view(W, H, C).permute(2, 1, 0).contiguous()
 
     return img.clamp(0.0, 1.0)
 
@@ -354,31 +352,13 @@ def hsv_to_rgb(img):
 
 def rgb_to_hsv(img):
     # img.size() -- [3, 341, 512]
-
     img = img.clamp(0.0, 1.0).permute(2, 1, 0)
-    W, H, C = img.size()
+    W, H, C = img.size() # [512, 352, 3]
 
-    shape = img.shape # [512, 352, 3]
-
-    img = img.contiguous().view(-1, 3) # size() -- [512 * 352, 3]
+    img = img.contiguous().view(W * H, 3) # size() -- [512 * 352, 3]
 
     mx = torch.max(img, dim=1)[0]
     mn = torch.min(img, dim=1)[0]
-
-    # ones = torch.ones(img.shape[0]).to(img.device) # size() -- [180224]
-    # zero = torch.zeros(shape[0:2]).to(img.device) # size() -- [512, 352]
-
-
-    # img = img.view(shape)
-    img = img.view(W, H, C)
-
-    # ones1 = ones[0 : math.floor((ones.shape[0] / 2))] # size() -- [90112]
-    # ones2 = ones[math.floor(ones.shape[0] / 2) : (ones.shape[0])] # size() -- [90112]
-
-    # mx1 = mx[0 : math.floor((ones.shape[0] / 2))] # size() -- [90112]
-    # mx2 = mx[math.floor(ones.shape[0] / 2) : (ones.shape[0])] # size() -- [90112]
-    # mn1 = mn[0 : math.floor((ones.shape[0] / 2))] # size() -- [90112]
-    # mn2 = mn[math.floor(ones.shape[0] / 2) : (ones.shape[0])] # size() -- [90112]
 
     ones = torch.ones(W * H).to(img.device) # size() -- [180224]
     ones1 = ones[0 : (W*H)//2] # size() -- [90112]
@@ -394,8 +374,6 @@ def rgb_to_hsv(img):
 
     df = torch.cat((df1, df2), dim=0) # size() -- [180224]
     del df1, df2
-    # df = df.view(shape[0:2]) + 1e-10
-    # mx = mx.view(shape[0:2]) # size() -- [512, 352]
 
     df = df.view(W, H) + 1e-10
     mx = mx.view(W, H) # size() -- [512, 352]
@@ -403,6 +381,7 @@ def rgb_to_hsv(img):
     df = df.to(img.device)
     mx = mx.to(img.device)
 
+    img = img.view(W, H, C)
     r = img[:, :, 0].clone()
     g = img[:, :, 1].clone()
     b = img[:, :, 2].clone()
@@ -437,7 +416,7 @@ def apply_curve(img, C, channel_in: int, channel_out: int):
 
     # Use predicted line segments to compute scaling factors for the channel
     scale = torch.zeros_like(img[:, :, channel_in]) + float(C[0])
-    for i in range(0, slope.shape[0] - 1):
+    for i in range(0, slope.shape[0] - 1): # 
         scale += float(slope[i]) * (img[:, :, channel_in] * curve_steps - i)
 
     img[:, :, channel_out] = img[:, :, channel_out] * scale
@@ -445,7 +424,8 @@ def apply_curve(img, C, channel_in: int, channel_out: int):
 
 
 def adjust_hsv(img, S):
-    """Adjust the HSV channels of a HSV image using learnt curves
+    """
+        Adjust the HSV channels of a HSV image using learnt curves
     """
     img = img.squeeze(0).permute(2, 1, 0).contiguous()
 
@@ -455,20 +435,10 @@ def adjust_hsv(img, S):
     S3 = torch.exp(S[S_4 * 2 : S_4 * 3])
     S4 = torch.exp(S[S_4 * 3 : S_4 * 4])
 
-    # Adjust Hue channel based on Hue using the predicted curve
-    # img = apply_curve(img, S1, channel_in=0, channel_out=0)
+    # Apply the curve to the HSV channel 
     apply_curve(img, S1, channel_in=0, channel_out=0)
-
-    # Adjust Saturation channel based on Hue using the predicted curve
-    # img = apply_curve(img, S2, channel_in=0, channel_out=1)
     apply_curve(img, S2, channel_in=0, channel_out=1)
-
-    # Adjust Saturation channel based on Saturation using the predicted curve
-    # img = apply_curve(img, S3, channel_in=1, channel_out=1)
     apply_curve(img, S3, channel_in=1, channel_out=1)
-
-    # Adjust Value channel based on Value using the predicted curve
-    # img = apply_curve(img, S4, channel_in=2, channel_out=2)
     apply_curve(img, S4, channel_in=2, channel_out=2)
 
     img = img.permute(2, 1, 0).contiguous()
@@ -477,10 +447,10 @@ def adjust_hsv(img, S):
 
 
 def adjust_rgb(img, R):
-    """Adjust the RGB channels of a RGB image using learnt curves
+    """
+        Adjust the RGB channels of a RGB image using learnt curves
     """
     img = img.squeeze(0).permute(2, 1, 0).contiguous()
-    shape = img.shape
 
     # Extract the parameters of the three curves
     R_3 = R.shape[0] // 3
@@ -488,16 +458,9 @@ def adjust_rgb(img, R):
     R2 = torch.exp(R[R_3 : R_3 * 2])
     R3 = torch.exp(R[R_3 * 2 : R_3 * 3])
 
-    # Apply the curve to the R channel 
-    # img = apply_curve(img, R1, channel_in=0, channel_out=0)
+    # Apply the curve to the R/G/B channel 
     apply_curve(img, R1, channel_in=0, channel_out=0)
-
-    # Apply the curve to the G channel 
-    # img = apply_curve(img, R2, channel_in=1, channel_out=1)
     apply_curve(img, R2, channel_in=1, channel_out=1)
-
-    # Apply the curve to the B channel 
-    # img = apply_curve(img, R3, channel_in=2, channel_out=2)
     apply_curve(img, R3, channel_in=2, channel_out=2)
 
     img = img.permute(2, 1, 0).contiguous()
@@ -506,7 +469,8 @@ def adjust_rgb(img, R):
 
 
 def adjust_lab(img, L):
-    """Adjusts the image in LAB space using the predicted curves
+    """
+        Adjusts the image in LAB space using the predicted curves
     """
     img = img.permute(2, 1, 0).contiguous()
 
@@ -516,16 +480,9 @@ def adjust_lab(img, L):
     L2 = torch.exp(L[L_3 : L_3 * 2])
     L3 = torch.exp(L[L_3 * 2 : L_3 * 3])
 
-    # Apply the curve to the L channel 
-    # img = apply_curve(img, L1, channel_in=0, channel_out=0)
+    # Apply the curve to the Lab channel 
     apply_curve(img, L1, channel_in=0, channel_out=0)
-
-    # Now do the same for the a channel
-    # img = apply_curve(img, L2, channel_in=1, channel_out=1)
     apply_curve(img, L2, channel_in=1, channel_out=1)
-
-    # Now do the same for the b channel
-    # img = apply_curve(img, L3, channel_in=2, channel_out=2)
     apply_curve(img, L3, channel_in=2, channel_out=2)
 
     img = img.permute(2, 1, 0).contiguous()
@@ -620,9 +577,7 @@ class CURLLayer(nn.Module):
         x.contiguous()  # remove memory holes
 
         img = x[:, 0:3, :, :].clamp(0.0, 1.0)
-
         feat = x[:, 3:64, :, :]
-        shape = x.shape
         #######################################################
 
 
@@ -665,7 +620,6 @@ class CURLLayer(nn.Module):
         #######################################################
         img_rgb = adjust_rgb(img_rgb.squeeze(0), R[0, 0:48])
         #######################################################
-
 
         img_hsv = rgb_to_hsv(img_rgb.squeeze(0))
         feat_hsv = torch.cat((feat, img_hsv.unsqueeze(0)), dim=1)
