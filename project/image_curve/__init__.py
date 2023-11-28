@@ -2,7 +2,7 @@
 #
 # /************************************************************************************
 # ***
-# ***    Copyright Dell 2021, 2022(18588220928@163.com) All Rights Reserved.
+# ***    Copyright Dell 2021, 2024(18588220928@163.com) All Rights Reserved.
 # ***
 # ***    File Author: Dell, 2021年 12月 14日 星期二 00:22:28 CST
 # ***
@@ -20,18 +20,6 @@ from . import curve
 
 import pdb
 
-def get_tvm_model():
-    """
-    TVM model base on torch.jit.trace
-    """
-
-    model = curve.CURLNet()
-    device = todos.model.get_device()
-    model = model.to(device)
-    model.eval()
-    print(f"Running tvm model model on {device} ...")
-
-    return model, device
 
 
 def get_curve_model():
@@ -45,11 +33,18 @@ def get_curve_model():
     model.eval()
 
     print(f"Running on {device} ...")
-    model = torch.jit.script(model)
 
-    todos.data.mkdir("output")
-    if not os.path.exists("output/image_curve.torch"):
-        model.save("output/image_curve.torch")
+    # # make sure model good for C/C++
+    # model = torch.jit.script(model)
+    # # https://github.com/pytorch/pytorch/issues/52286
+    # torch._C._jit_set_profiling_executor(False)
+    # # C++ Reference
+    # # torch::jit::getProfilingMode() = false;                                                                                                             
+    # # torch::jit::setTensorExprFuserEnabled(false);
+
+    # todos.data.mkdir("output")
+    # if not os.path.exists("output/image_curve.torch"):
+    #     model.save("output/image_curve.torch")
 
     return model, device
 

@@ -3,7 +3,7 @@
 #
 # /************************************************************************************
 # ***
-# ***    Copyright 2020-2022 Dell(18588220928@163.com), All Rights Reserved.
+# ***    Copyright 2020-2024 Dell(18588220928@163.com), All Rights Reserved.
 # ***
 # ***    File Author: Dell, 2020年 09月 09日 星期三 23:56:45 CST
 # ***
@@ -14,17 +14,16 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List
 
 import pdb
 
 
 class CURLNet(nn.Module):
     def __init__(self):
-        super(CURLNet, self).__init__()
+        super().__init__()
         # Define max GPU/CPU memory -- 4G
         self.MAX_H = 1024
-        self.MAX_W = 2048
+        self.MAX_W = 1024
         self.MAX_TIMES = 16
         # GPU 9G, 270ms
 
@@ -40,14 +39,9 @@ class CURLNet(nn.Module):
 
     def forward(self, img):
         # img.size() -- [1, 3, 341, 512]
-
         feat = self.tednet(img)
-        img, grad_reg = self.curllayer(feat)
+        img = self.curllayer(feat)
 
-        # grad_reg --[1.3809e-09]
-        # grad_reg.size() -- [1]
-
-        # return img.clamp(0, 1.0), grad_reg
         return img.clamp(0, 1.0)
 
 
@@ -55,9 +49,8 @@ class TEDModel(nn.Module):
     """
     TED -- Transformed Encoder Decoder
     """
-
     def __init__(self):
-        super(TEDModel, self).__init__()
+        super().__init__()
 
         self.ted = TED()
         self.final_conv = nn.Conv2d(3, 64, 3, 1, 0, 1)
@@ -65,16 +58,16 @@ class TEDModel(nn.Module):
 
     def forward(self, img):
         output_img = self.ted(img.float())
-        return self.final_conv(self.refpad(output_img))
+        return self.final_conv(self.refpad(output_img)) # size() -- [1, 64, 352, 512]
 
 
 def make_layer(nIn, nOut, k, s, p, d=1):
-    return nn.Sequential(nn.Conv2d(nIn, nOut, k, s, p, d), nn.LeakyReLU(inplace=True))
+    return nn.Sequential(nn.Conv2d(nIn, nOut, k, s, p, d), nn.LeakyReLU())
 
 
 class MidNet2(nn.Module):
     def __init__(self, in_channels=16):
-        super(MidNet2, self).__init__()
+        super().__init__()
         self.lrelu = nn.LeakyReLU()
         self.conv1 = nn.Conv2d(in_channels, 64, 3, 1, 2, 2)
         self.conv2 = nn.Conv2d(64, 64, 3, 1, 2, 2)
@@ -92,7 +85,7 @@ class MidNet2(nn.Module):
 
 class MidNet4(nn.Module):
     def __init__(self, in_channels=16):
-        super(MidNet4, self).__init__()
+        super().__init__()
         self.lrelu = nn.LeakyReLU()
         self.conv1 = nn.Conv2d(in_channels, 64, 3, 1, 4, 4)
         self.conv2 = nn.Conv2d(64, 64, 3, 1, 4, 4)
@@ -117,7 +110,7 @@ class TED(nn.Module):
     """TED -- Transformed Encoder Decoder"""
 
     def __init__(self):
-        super(TED, self).__init__()
+        super().__init__()
 
         self.conv1 = nn.Conv2d(16, 64, 1)
         self.conv2 = nn.Conv2d(32, 64, 1)
@@ -135,7 +128,7 @@ class TED(nn.Module):
 
         self.maxpool = nn.MaxPool2d(kernel_size=2, padding=0)
 
-        self.upsample = nn.UpsamplingNearest2d(scale_factor=2)
+        self.upsample = nn.UpsamplingNearest2d(scale_factor=2.0)
         self.up_conv1x1_1 = nn.Conv2d(128, 128, 1)
         self.up_conv1x1_2 = nn.Conv2d(64, 64, 1)
         self.up_conv1x1_3 = nn.Conv2d(32, 32, 1)
@@ -159,7 +152,7 @@ class TED(nn.Module):
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
             make_layer(64, 64, 3, 2, 1),
             nn.AdaptiveAvgPool2d(1),
-            Flatten(),
+            nn.Flatten(start_dim=1),
             nn.Dropout(0.5),
             nn.Linear(64, 64),
         )
@@ -167,14 +160,12 @@ class TED(nn.Module):
     def forward(self, x):
         # x.size() -- [1, 3, 341, 512]
         x_in_tile = x.clone()
+
         conv1 = self.dconv_down1(x)
         x = self.maxpool(conv1)
-        conv2 = self.dconv_down2(x)
-        x = self.maxpool(conv2)
-        conv3 = self.dconv_down3(x)
-        x = self.maxpool(conv3)
-        conv4 = self.dconv_down4(x)
-        x = self.maxpool(conv4)
+        x = self.maxpool(self.dconv_down2(x))
+        x = self.maxpool(self.dconv_down3(x))
+        x = self.maxpool(self.dconv_down4(x))
         x = self.dconv_down5(x)
         x = self.up_conv1x1_1(self.upsample(x))
 
@@ -433,7 +424,7 @@ def rgb_to_hsv(img):
     return img.clamp(0.0, 1.0)
 
 
-def apply_curve(img, C, slope_sqr_diff, channel_in: int, channel_out: int) -> List[torch.Tensor]:
+def apply_curve(img, C, channel_in: int, channel_out: int):
     """Applies a peicewise linear curve defined by a set of knot points to
     an image channel
 
@@ -455,11 +446,6 @@ def apply_curve(img, C, slope_sqr_diff, channel_in: int, channel_out: int) -> Li
     for i in range(0, C.shape[0] - 1):
         slope[i] = C[i + 1] - C[i]
 
-    """
-    Compute the squared difference between slopes
-    """
-    for i in range(0, slope.shape[0] - 1):
-        slope_sqr_diff += (slope[i + 1] - slope[i]) * (slope[i + 1] - slope[i])
 
     """
     Use predicted line segments to compute scaling factors for the channel
@@ -472,10 +458,10 @@ def apply_curve(img, C, slope_sqr_diff, channel_in: int, channel_out: int) -> Li
 
     img_copy[:, :, channel_out] = img[:, :, channel_out] * scale
 
-    return img_copy.clamp(0.0, 1.0), slope_sqr_diff
+    return img_copy.clamp(0.0, 1.0)
 
 
-def adjust_hsv(img, S) -> List[torch.Tensor]:
+def adjust_hsv(img, S):
     """Adjust the HSV channels of a HSV image using learnt curves
 
     :param img: image to be adjusted
@@ -491,27 +477,25 @@ def adjust_hsv(img, S) -> List[torch.Tensor]:
     S3 = torch.exp(S[(int(S.shape[0] / 4) * 2) : (int(S.shape[0] / 4) * 3)])
     S4 = torch.exp(S[(int(S.shape[0] / 4) * 3) : (int(S.shape[0] / 4) * 4)])
 
-    slope_sqr_diff = torch.zeros(1).to(img.device)
-
     """
     Adjust Hue channel based on Hue using the predicted curve
     """
-    img_copy, slope_sqr_diff = apply_curve(img, S1, slope_sqr_diff, channel_in=0, channel_out=0)
+    img_copy = apply_curve(img, S1, channel_in=0, channel_out=0)
 
     """
     Adjust Saturation channel based on Hue using the predicted curve
     """
-    img_copy, slope_sqr_diff = apply_curve(img_copy, S2, slope_sqr_diff, channel_in=0, channel_out=1)
+    img_copy = apply_curve(img_copy, S2, channel_in=0, channel_out=1)
 
     """
     Adjust Saturation channel based on Saturation using the predicted curve
     """
-    img_copy, slope_sqr_diff = apply_curve(img_copy, S3, slope_sqr_diff, channel_in=1, channel_out=1)
+    img_copy = apply_curve(img_copy, S3, channel_in=1, channel_out=1)
 
     """
     Adjust Value channel based on Value using the predicted curve
     """
-    img_copy, slope_sqr_diff = apply_curve(img_copy, S4, slope_sqr_diff, channel_in=2, channel_out=2)
+    img_copy = apply_curve(img_copy, S4, channel_in=2, channel_out=2)
 
     img = img_copy.clone()
     del img_copy
@@ -519,10 +503,10 @@ def adjust_hsv(img, S) -> List[torch.Tensor]:
     # img[(img != img).detach()] = 0
     img = img.permute(2, 1, 0).contiguous()
 
-    return img, slope_sqr_diff
+    return img
 
 
-def adjust_rgb(img, R) -> List[torch.Tensor]:
+def adjust_rgb(img, R):
     """Adjust the RGB channels of a RGB image using learnt curves
 
     :param img: image to be adjusted
@@ -543,18 +527,17 @@ def adjust_rgb(img, R) -> List[torch.Tensor]:
     """
     Apply the curve to the R channel 
     """
-    slope_sqr_diff = torch.zeros(1).to(img.device)
-    img_copy, slope_sqr_diff = apply_curve(img, R1, slope_sqr_diff, channel_in=0, channel_out=0)
+    img_copy = apply_curve(img, R1, channel_in=0, channel_out=0)
 
     """
     Apply the curve to the G channel 
     """
-    img_copy, slope_sqr_diff = apply_curve(img_copy, R2, slope_sqr_diff, channel_in=1, channel_out=1)
+    img_copy = apply_curve(img_copy, R2, channel_in=1, channel_out=1)
 
     """
     Apply the curve to the B channel 
     """
-    img_copy, slope_sqr_diff = apply_curve(img_copy, R3, slope_sqr_diff, channel_in=2, channel_out=2)
+    img_copy = apply_curve(img_copy, R3, channel_in=2, channel_out=2)
 
     img = img_copy.clone()
     del img_copy
@@ -562,10 +545,10 @@ def adjust_rgb(img, R) -> List[torch.Tensor]:
     # img[(img != img).detach()] = 0
     img = img.permute(2, 1, 0).contiguous()
 
-    return img, slope_sqr_diff
+    return img
 
 
-def adjust_lab(img, L) -> List[torch.Tensor]:
+def adjust_lab(img, L):
     """Adjusts the image in LAB space using the predicted curves
 
     :param img: Image tensor
@@ -582,22 +565,20 @@ def adjust_lab(img, L) -> List[torch.Tensor]:
     L2 = torch.exp(L[(int(L.shape[0] / 3)) : (int(L.shape[0] / 3) * 2)])
     L3 = torch.exp(L[(int(L.shape[0] / 3) * 2) : (int(L.shape[0] / 3) * 3)])
 
-    slope_sqr_diff = torch.zeros(1).to(img.device)
-
     """
     Apply the curve to the L channel 
     """
-    img_copy, slope_sqr_diff = apply_curve(img, L1, slope_sqr_diff, channel_in=0, channel_out=0)
+    img_copy = apply_curve(img, L1, channel_in=0, channel_out=0)
 
     """
     Now do the same for the a channel
     """
-    img_copy, slope_sqr_diff = apply_curve(img_copy, L2, slope_sqr_diff, channel_in=1, channel_out=1)
+    img_copy = apply_curve(img_copy, L2, channel_in=1, channel_out=1)
 
     """
     Now do the same for the b channel
     """
-    img_copy, slope_sqr_diff = apply_curve(img_copy, L3, slope_sqr_diff, channel_in=2, channel_out=2)
+    img_copy = apply_curve(img_copy, L3, channel_in=2, channel_out=2)
 
     img = img_copy.clone()
     del img_copy
@@ -605,12 +586,12 @@ def adjust_lab(img, L) -> List[torch.Tensor]:
     # img[(img != img).detach()] = 0
     img = img.permute(2, 1, 0).contiguous()
 
-    return img, slope_sqr_diff
+    return img
 
 
 class LocalNet(nn.Module):
     def __init__(self, in_channels=16, out_channels=64):
-        super(LocalNet, self).__init__()
+        super().__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, 3, 1, 0, 1)
         self.conv2 = nn.Conv2d(out_channels, out_channels, 3, 1, 0, 1)
         self.lrelu = nn.LeakyReLU()
@@ -622,9 +603,9 @@ class LocalNet(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, num_in_channels, num_out_channels, stride=1):
-        super(ConvBlock, self).__init__()
-        self.conv = nn.Conv2d(num_in_channels, num_out_channels, kernel_size=3, stride=2, padding=1, bias=True)
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1, bias=True)
         self.lrelu = nn.LeakyReLU()
 
     def forward(self, x):
@@ -633,7 +614,7 @@ class ConvBlock(nn.Module):
 
 class MaxPoolBlock(nn.Module):
     def __init__(self):
-        super(MaxPoolBlock, self).__init__()
+        super().__init__()
         self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
     def forward(self, x):
@@ -642,7 +623,7 @@ class MaxPoolBlock(nn.Module):
 
 class GlobalPoolingBlock(nn.Module):
     def __init__(self):
-        super(GlobalPoolingBlock, self).__init__()
+        super().__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(output_size=1)
 
     def forward(self, x):
@@ -650,11 +631,11 @@ class GlobalPoolingBlock(nn.Module):
 
 
 class CURLLayer(nn.Module):
-    def __init__(self, num_in_channels=64, num_out_channels=64):
-        super(CURLLayer, self).__init__()
+    def __init__(self, in_channels=64, out_channels=64):
+        super().__init__()
 
-        self.num_in_channels = num_in_channels
-        self.num_out_channels = num_out_channels
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         self.make_init_network()
 
     def make_init_network(self):
@@ -666,7 +647,6 @@ class CURLLayer(nn.Module):
         self.lab_layer6 = MaxPoolBlock()
         self.lab_layer7 = ConvBlock(64, 64)
         self.lab_layer8 = GlobalPoolingBlock()
-
         self.fc_lab = nn.Linear(64, 48)
 
         self.dropout1 = nn.Dropout(0.5)
@@ -681,7 +661,6 @@ class CURLLayer(nn.Module):
         self.rgb_layer6 = MaxPoolBlock()
         self.rgb_layer7 = ConvBlock(64, 64)
         self.rgb_layer8 = GlobalPoolingBlock()
-
         self.fc_rgb = nn.Linear(64, 48)
 
         self.hsv_layer1 = ConvBlock(64, 64)
@@ -692,10 +671,9 @@ class CURLLayer(nn.Module):
         self.hsv_layer6 = MaxPoolBlock()
         self.hsv_layer7 = ConvBlock(64, 64)
         self.hsv_layer8 = GlobalPoolingBlock()
-
         self.fc_hsv = nn.Linear(64, 64)
 
-    def forward(self, x) -> List[torch.Tensor]:
+    def forward(self, x):
         x.contiguous()  # remove memory holes
 
         img = x[:, 0:3, :, :]
@@ -721,7 +699,7 @@ class CURLLayer(nn.Module):
         x = self.dropout1(x)
         L = self.fc_lab(x)
 
-        img_lab, grad_reg_lab = adjust_lab(img_lab.squeeze(0), L[0, 0:48])
+        img_lab = adjust_lab(img_lab.squeeze(0), L[0, 0:48])
         img_rgb = lab_to_rgb(img_lab.squeeze(0))
         img_rgb = img_rgb.clamp(0.0, 1.0)
 
@@ -739,7 +717,7 @@ class CURLLayer(nn.Module):
         x = self.dropout2(x)
         R = self.fc_rgb(x)
 
-        img_rgb, grad_reg_rgb = adjust_rgb(img_rgb.squeeze(0), R[0, 0:48])
+        img_rgb = adjust_rgb(img_rgb.squeeze(0), R[0, 0:48])
         img_rgb = img_rgb.clamp(0.0, 1.0)
 
         img_hsv = rgb_to_hsv(img_rgb.squeeze(0)).clamp(0.0, 1.0)
@@ -758,7 +736,7 @@ class CURLLayer(nn.Module):
         x = self.dropout3(x)
         H = self.fc_hsv(x)
 
-        img_hsv, grad_reg_hsv = adjust_hsv(img_hsv, H[0, 0:64])
+        img_hsv = adjust_hsv(img_hsv, H[0, 0:64])
         img_hsv = img_hsv.clamp(0.0, 1.0)
 
         img_residual = hsv_to_rgb(img_hsv.squeeze(0)).clamp(0.0, 1.0)
@@ -766,6 +744,4 @@ class CURLLayer(nn.Module):
         img = img + img_residual.unsqueeze(0)
         img = img.clamp(0.0, 1.0)
 
-        grad_reg = grad_reg_rgb + grad_reg_lab + grad_reg_hsv
-
-        return img, grad_reg
+        return img
