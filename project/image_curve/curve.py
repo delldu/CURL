@@ -198,11 +198,10 @@ def rgb_to_lab(img):
     shape = img.shape
     img = img.view(-1, 3)
 
-    img = img.clamp(min = 0.0001)
-
+    # img = img.clamp(min = 0.00001)
     img = (
         (img / 12.92) * img.le(0.04045).float()
-        + (((img + 0.055) / 1.055) ** 2.4) * img.gt(0.04045).float()
+        + (((torch.clamp(img, min=0.0001) + 0.055) / 1.055) ** 2.4) * img.gt(0.04045).float()
     )
 
     rgb_to_xyz = torch.tensor(
@@ -219,7 +218,7 @@ def rgb_to_lab(img):
     epsilon = 6.0 / 29.0
     img = (
         (img / (3.0 * epsilon ** 2) + 4.0/29.0) * (img.le(epsilon ** 3).float())
-        + (img ** (1.0/3.0) * (img.gt(epsilon ** 3).float()))
+        + (torch.clamp(img, min=0.0001) ** (1.0/3.0) * (img.gt(epsilon ** 3).float()))
     )
 
     fxfyfz_to_lab = torch.tensor(
@@ -256,11 +255,13 @@ def lab_to_rgb(img):
     img = img.permute(2, 1, 0).contiguous()
     shape = img.shape
     img = img.view(-1, 3)
+    # img = img.clamp(min=0.00001)
+
     img_copy = img.clone()
 
-    img_copy[:, 0] = img[:, 0] * 100
-    img_copy[:, 1] = ((img[:, 1] * 2) - 1) * 110
-    img_copy[:, 2] = ((img[:, 2] * 2) - 1) * 110
+    img_copy[:, 0] = img[:, 0] * 100.0
+    img_copy[:, 1] = ((img[:, 1] * 2.0) - 1.0) * 110.0
+    img_copy[:, 2] = ((img[:, 2] * 2.0) - 1.0) * 110.0
 
     img = img_copy.clone()
     del img_copy
@@ -299,8 +300,7 @@ def lab_to_rgb(img):
             + ((torch.clamp(img, min=0.0001) ** (1.0 / 2.4) * 1.055) - 0.055) * img.gt(0.0031308).float()
         )
 
-    img = img.view(shape)
-    img = img.permute(2, 1, 0).contiguous()
+    img = img.view(shape).permute(2, 1, 0).contiguous()
 
     return img.clamp(0.0, 1.0)
 
@@ -384,6 +384,8 @@ def rgb_to_hsv(img):
 
     df1 = torch.add(mx1, torch.mul(ones1 * -1, mn1))
     df2 = torch.add(mx2, torch.mul(ones2 * -1, mn2))
+
+    # pdb.set_trace()
 
     df = torch.cat((df1, df2), dim=0)
     del df1, df2
