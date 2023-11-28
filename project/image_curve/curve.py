@@ -113,7 +113,7 @@ class TED(nn.Module):
 
         self.mid_net2_1 = MidNet2(in_channels=16)
         self.mid_net4_1 = MidNet4(in_channels=16)
-        self.local_net = LocalNet(16)
+        self.local_net = LocalNet(16) # useless
 
         self.dconv_down1 = LocalNet(3, 16)
         self.dconv_down2 = LocalNet(16, 32)
@@ -198,7 +198,6 @@ def rgb_to_lab(img):
     shape = img.shape
     img = img.view(-1, 3)
 
-    # img = img.clamp(min = 0.00001)
     img = (
         (img / 12.92) * img.le(0.04045).float()
         + (((torch.clamp(img, min=0.0001) + 0.055) / 1.055) ** 2.4) * img.gt(0.04045).float()
@@ -242,7 +241,6 @@ def rgb_to_lab(img):
     img[1, :, :] = (img[1, :, :] / 110.0 + 1.0) / 2.0
     img[2, :, :] = (img[2, :, :] / 110.0 + 1.0) / 2.0
 
-    # img[(img != img).detach()] = 0
     img = img.contiguous()  # img.size() -- [3, 341, 512]
 
     return img.clamp(0.0, 1.0)
@@ -253,18 +251,14 @@ def lab_to_rgb(img):
     # img.min(), img.max() -- 0., 0.6350
 
     img = img.permute(2, 1, 0).contiguous()
+
     shape = img.shape
     img = img.view(-1, 3)
-    # img = img.clamp(min=0.00001)
 
-    img_copy = img.clone()
+    img[:, 0] = img[:, 0] * 100.0
+    img[:, 1] = ((img[:, 1] * 2.0) - 1.0) * 110.0
+    img[:, 2] = ((img[:, 2] * 2.0) - 1.0) * 110.0
 
-    img_copy[:, 0] = img[:, 0] * 100.0
-    img_copy[:, 1] = ((img[:, 1] * 2.0) - 1.0) * 110.0
-    img_copy[:, 2] = ((img[:, 2] * 2.0) - 1.0) * 110.0
-
-    img = img_copy.clone()
-    del img_copy
 
     lab_to_fxfyfz = torch.tensor(
         [  # X Y Z
@@ -273,8 +267,9 @@ def lab_to_rgb(img):
             [0.0, 0.0, -1.0 / 200.0],  # B
         ]
     ).to(img.device)
+    lab_base_offset = torch.tensor([16.0, 0.0, 0.0]).to(img.device)
 
-    img = torch.matmul(img + torch.tensor([16.0, 0.0, 0.0]).to(img.device), lab_to_fxfyfz)
+    img = torch.matmul(img + lab_base_offset, lab_to_fxfyfz)
 
     epsilon = 6.0 / 29.0
     img = (
@@ -352,7 +347,6 @@ def hsv_to_rgb(img):
     )
 
     img = torch.stack((r, g, b), dim=2)
-    # img[(img != img).detach()] = 0
     img = img.permute(2, 1, 0).contiguous()
 
     return img.clamp(0.0, 1.0)
@@ -444,8 +438,7 @@ def apply_curve(img, C, channel_in: int, channel_out: int):
 def adjust_hsv(img, S):
     """Adjust the HSV channels of a HSV image using learnt curves
     """
-    img = img.squeeze(0).permute(2, 1, 0)
-    img = img.contiguous()
+    img = img.squeeze(0).permute(2, 1, 0).contiguous()
 
     S_4 = S.shape[0] // 4
     S1 = torch.exp(S[0 : S_4])
@@ -473,9 +466,8 @@ def adjust_hsv(img, S):
 def adjust_rgb(img, R):
     """Adjust the RGB channels of a RGB image using learnt curves
     """
-    img = img.squeeze(0).permute(2, 1, 0)
+    img = img.squeeze(0).permute(2, 1, 0).contiguous()
     shape = img.shape
-    img = img.contiguous()
 
     # Extract the parameters of the three curves
     R_3 = R.shape[0] // 3
@@ -610,9 +602,9 @@ class CURLLayer(nn.Module):
         x.contiguous()  # remove memory holes
 
         img = x[:, 0:3, :, :].clamp(0.0, 1.0)
+
         feat = x[:, 3:64, :, :]
         shape = x.shape
-
         #######################################################
 
 
@@ -679,6 +671,6 @@ class CURLLayer(nn.Module):
 
         img_residual = hsv_to_rgb(img_hsv.squeeze(0))
 
-        img = img + img_residual.unsqueeze(0)
+        img += img_residual.unsqueeze(0)
 
         return img.clamp(0.0, 1.0)
