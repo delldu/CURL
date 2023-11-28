@@ -424,39 +424,20 @@ def rgb_to_hsv(img):
 
 
 def apply_curve(img, C, channel_in: int, channel_out: int):
-    """Applies a peicewise linear curve defined by a set of knot points to
-    an image channel
-
-    :param img: image to be adjusted
-    :param C: predicted knot points of curve
-    :returns: adjusted image
-    """
-    # C -- tensor([1.0102, 1.0090, 1.0077, 1.0064, 1.0052, 1.0039, 1.0026, 1.0014, 1.0001,
-    #     0.9988, 0.9976, 0.9963, 0.9950, 0.9938, 0.9925, 0.9912],
-    #    device='cuda:0')
-
-    slope = torch.zeros((C.shape[0] - 1)).to(img.device)
     curve_steps = C.shape[0] - 1
-    #  C.shape -- torch.Size([16])
+    slope = torch.zeros((curve_steps, )).to(img.device)
 
-    """
-    Compute the slope of the line segments
-    """
-    for i in range(0, C.shape[0] - 1):
+    # Compute the slope of the line segments
+    for i in range(0, curve_steps):
         slope[i] = C[i + 1] - C[i]
 
-    """
-    Use predicted line segments to compute scaling factors for the channel
-    """
+    # Use predicted line segments to compute scaling factors for the channel
     scale = torch.zeros_like(img[:, :, channel_in]) + float(C[0])
     for i in range(0, slope.shape[0] - 1):
         scale += float(slope[i]) * (img[:, :, channel_in] * curve_steps - i)
 
-    img_copy = img.clone()
-
-    img_copy[:, :, channel_out] = img[:, :, channel_out] * scale
-
-    return img_copy.clamp(0.0, 1.0)
+    img[:, :, channel_out] = img[:, :, channel_out] * scale
+    return img.clamp(0.0, 1.0)
 
 
 def adjust_hsv(img, S):
@@ -467,13 +448,14 @@ def adjust_hsv(img, S):
     :returns: adjust image, regularisation term
     """
     img = img.squeeze(0).permute(2, 1, 0)
-    shape = img.shape
+    # shape = img.shape
     img = img.contiguous()
 
-    S1 = torch.exp(S[0 : int(S.shape[0] / 4)])
-    S2 = torch.exp(S[(int(S.shape[0] / 4)) : (int(S.shape[0] / 4) * 2)])
-    S3 = torch.exp(S[(int(S.shape[0] / 4) * 2) : (int(S.shape[0] / 4) * 3)])
-    S4 = torch.exp(S[(int(S.shape[0] / 4) * 3) : (int(S.shape[0] / 4) * 4)])
+    S_4 = S.shape[0] // 4
+    S1 = torch.exp(S[0 : S_4])
+    S2 = torch.exp(S[S_4 : S_4 * 2])
+    S3 = torch.exp(S[S_4 * 2 : S_4 * 3])
+    S4 = torch.exp(S[S_4 * 3 : S_4 * 4])
 
     # Adjust Hue channel based on Hue using the predicted curve
     img_copy = apply_curve(img, S1, channel_in=0, channel_out=0)
@@ -510,9 +492,10 @@ def adjust_rgb(img, R):
     """
     Extract the parameters of the three curves
     """
-    R1 = torch.exp(R[0 : int(R.shape[0] / 3)])
-    R2 = torch.exp(R[(int(R.shape[0] / 3)) : (int(R.shape[0] / 3) * 2)])
-    R3 = torch.exp(R[(int(R.shape[0] / 3) * 2) : (int(R.shape[0] / 3) * 3)])
+    R_3 = R.shape[0] // 3
+    R1 = torch.exp(R[0 : R_3])
+    R2 = torch.exp(R[R_3 : R_3 * 2])
+    R3 = torch.exp(R[R_3 * 2 : R_3 * 3])
 
     # Apply the curve to the R channel 
     img_copy = apply_curve(img, R1, channel_in=0, channel_out=0)
@@ -545,9 +528,10 @@ def adjust_lab(img, L):
     """
     Extract predicted parameters for each L,a,b curve
     """
-    L1 = torch.exp(L[0 : int(L.shape[0] / 3)])
-    L2 = torch.exp(L[(int(L.shape[0] / 3)) : (int(L.shape[0] / 3) * 2)])
-    L3 = torch.exp(L[(int(L.shape[0] / 3) * 2) : (int(L.shape[0] / 3) * 3)])
+    L_3 = L.shape[0] // 3
+    L1 = torch.exp(L[0 : L_3])
+    L2 = torch.exp(L[L_3 : L_3 * 2])
+    L3 = torch.exp(L[L_3 * 2 : L_3 * 3])
 
     # Apply the curve to the L channel 
     img_copy = apply_curve(img, L1, channel_in=0, channel_out=0)
@@ -654,7 +638,7 @@ class CURLLayer(nn.Module):
     def forward(self, x):
         x.contiguous()  # remove memory holes
 
-        img = x[:, 0:3, :, :]
+        img = x[:, 0:3, :, :].clamp(0.0, 1.0)
         feat = x[:, 3:64, :, :]
 
         shape = x.shape
