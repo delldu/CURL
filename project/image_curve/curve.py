@@ -199,9 +199,7 @@ def rgb_to_lab(img):
     # img.size() -- [3, 341, 512]
     C, H, W = img.size()
 
-    img = img.permute(2, 1, 0).contiguous()
-    # img = img.view(W * H, 3)
-    img = img.reshape(W * H, 3)
+    img = img.permute(2, 1, 0).contiguous().view(W * H, 3)
 
     temp1 = img.le(0.04045).float()
     temp2 = 1.0 - temp1
@@ -224,7 +222,8 @@ def rgb_to_lab(img):
 
     temp1 = img.le(epsilon3).float()
     temp2 = 1.0 - temp1
-    img = (img / (3.0 * epsilon2) + 4.0/29.0) * temp1 + (torch.clamp(img, min=0.0001) ** (1.0/3.0) * temp2)
+    img = ((img / (3.0 * epsilon2) + 4.0/29.0) * temp1 + 
+           (torch.clamp(img, min=0.0001) ** (1.0/3.0) * temp2))
 
     fxfyfz_to_lab = torch.tensor(
         [
@@ -246,8 +245,6 @@ def rgb_to_lab(img):
     img[0, :, :] = img[0, :, :] / 100.0
     img[1, :, :] = (img[1, :, :] / 110.0 + 1.0) / 2.0
     img[2, :, :] = (img[2, :, :] / 110.0 + 1.0) / 2.0
-
-    # img = img.contiguous()  # img.size() -- [3, 341, 512]
 
     return img.clamp(0.0, 1.0)
 
@@ -305,13 +302,12 @@ def lab_to_rgb(img):
 def hsv_to_rgb(img):
     # img.size() -- [3, 341, 512]
 
-    img = img.clamp(0.0, 1.0).permute(2, 1, 0)
-    c0 = img[:, :, 0]
-    c1 = img[:, :, 1]
-    c2 = img[:, :, 2]
+    # img = img.clamp(0.0, 1.0)
+    c0 = img[0, :, :]
+    c1 = img[1, :, :]
+    c2 = img[2, :, :]
 
     m = (c2 * (1.0 - c1) - c2) / 60.0
-
     r = (c2
         + torch.clamp(c0 * 360.0 - 60.0, 0.0, 60.0) * m
         - torch.clamp(c0 * 360.0 - 240.0, 0.0, 60.0) * m
@@ -327,15 +323,16 @@ def hsv_to_rgb(img):
         + torch.clamp(c0 * 360.0 - 300.0, 0.0, 60.0) * m
     )
 
-    img = torch.stack((r, g, b), dim=2)
-    img = img.permute(2, 1, 0).contiguous()
+    img = torch.stack((r, g, b), dim=0)
 
     return img.clamp(0.0, 1.0)
 
 
 def rgb_to_hsv(img):
     # img.size() -- [3, 341, 512]
-    img = img.clamp(0.0, 1.0).permute(2, 1, 0)
+    # img = img.clamp(0.0, 1.0).permute(2, 1, 0)
+    img = img.permute(2, 1, 0)
+
     W, H, C = img.size() # [512, 352, 3]
 
     img = img.contiguous().view(W * H, 3) # size() -- [512 * 352, 3]
@@ -362,28 +359,9 @@ def rgb_to_hsv(img):
 
     img = img.reshape(W, H, C)
 
-    r = img[:, :, 0] #.clone()
-    g = img[:, :, 1] #.clone()
-    b = img[:, :, 2] #.clone()
-
-    # img_copy = img #.clone()
-    # img_copy[:, :, 0] = (
-    #     ((g - b) / df) * r.eq(mx).float()
-    #     + (2.0 + (b - r) / df) * g.eq(mx).float()
-    #     + (4.0 + (r - g) / df) * b.eq(mx).float()
-    # )
-    # img_copy[:, :, 0] = img_copy[:, :, 0] * 60.0
-
-
-
-    # r = img_copy[:, :, 0]
-    # zero = torch.zeros(W, H).to(img.device) # size() -- [512, 352]
-    # img_copy[:, :, 0] = r.lt(zero).float() * (r + 360.0) + r.ge(zero).float() * r
-    # img_copy[:, :, 0] = img_copy[:, :, 0] / 360.0
-    # img_copy[:, :, 1] = mx.ne(zero).float() * (df / mx) + mx.eq(zero).float() * (zero)
-    # img_copy[:, :, 2] = mx
-    # img = img_copy.clone().permute(2, 1, 0)
-
+    r = img[:, :, 0]
+    g = img[:, :, 1]
+    b = img[:, :, 2]
 
     img[:, :, 0] = (
         ((g - b) / df) * r.eq(mx).float()
@@ -436,7 +414,7 @@ def adjust_hsv(img, S):
     apply_curve(img, S3, channel_in=1, channel_out=1)
     apply_curve(img, S4, channel_in=2, channel_out=2)
 
-    return img.clamp(0.0, 1.0)
+    return img
 
 
 def adjust_rgb(img, R):
@@ -539,10 +517,6 @@ class CURLLayer(nn.Module):
         self.lab_layer8 = GlobalPoolingBlock()
         self.fc_lab = nn.Linear(64, 48)
 
-        # self.dropout1 = nn.Dropout(0.5)
-        # self.dropout2 = nn.Dropout(0.5)
-        # self.dropout3 = nn.Dropout(0.5)
-
         self.rgb_layer1 = ConvBlock(64, 64)
         self.rgb_layer2 = MaxPoolBlock()
         self.rgb_layer3 = ConvBlock(64, 64)
@@ -565,11 +539,11 @@ class CURLLayer(nn.Module):
 
     def forward(self, x):
         # x.size() -- [1, 64, 352, 512]
-        # x.contiguous()  # remove memory holes
-
-        img = x[:, 0:3, :, :].clamp(0.0, 1.0)
+        img = x[:, 0:3, :, :]
         feat = x[:, 3:64, :, :]
+
         #######################################################
+        # Step 1
         img_lab = rgb_to_lab(img.squeeze(0))
 
         feat_lab = torch.cat((feat, img_lab.unsqueeze(0)), dim=1)
@@ -587,11 +561,10 @@ class CURLLayer(nn.Module):
         x = x.view(B, C * H * W)
 
         L = self.fc_lab(x) # size() -- [1, 48]
-        #######################################################
         img_lab = adjust_lab(img_lab.squeeze(0), L[0, 0:48])
+
         #######################################################
-
-
+        # Step 2
         img_rgb = lab_to_rgb(img_lab.squeeze(0))
         feat_rgb = torch.cat((feat, img_rgb.unsqueeze(0)), dim=1)
 
@@ -604,21 +577,19 @@ class CURLLayer(nn.Module):
         x = self.rgb_layer7(x)
         x = self.rgb_layer8(x)
         # x.size() -- [1, 64, 1, 1]
-        # x = x.view(x.size(0), -1)
         B, C, H, W = x.size()
         x = x.view(B, C * H * W)
-        # x = self.dropout2(x)
         R = self.fc_rgb(x)
 
-        #######################################################
         img_rgb = adjust_rgb(img_rgb.squeeze(0), R[0, 0:48])
-        #######################################################
 
+
+        #######################################################
+        # Step 3
         img_hsv = rgb_to_hsv(img_rgb.squeeze(0))
         feat_hsv = torch.cat((feat, img_hsv.unsqueeze(0)), dim=1)
 
         x = self.hsv_layer1(feat_hsv)
-        # del feat_hsv
         x = self.hsv_layer2(x)
         x = self.hsv_layer3(x)
         x = self.hsv_layer4(x)
@@ -626,16 +597,14 @@ class CURLLayer(nn.Module):
         x = self.hsv_layer6(x)
         x = self.hsv_layer7(x)
         x = self.hsv_layer8(x)
-        # x = x.view(x.size(0), -1)
         B, C, H, W = x.size()
         x = x.view(B, C * H * W)
-        # x = self.dropout3(x)
         H = self.fc_hsv(x)
 
-        #######################################################
         img_hsv = adjust_hsv(img_hsv, H[0, 0:64])
-        #######################################################
 
+        #######################################################
+        # Step 4
         img_residual = hsv_to_rgb(img_hsv.squeeze(0))
 
         img += img_residual.unsqueeze(0)
