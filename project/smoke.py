@@ -101,9 +101,8 @@ def export_onnx_model():
     }
     onnx_filename = "output/image_curve.onnx"
 
-    # OK under cpu !!!
     torch.onnx.export(model, dummy_input, onnx_filename, 
-        verbose=True, 
+        verbose=False, 
         input_names=input_names, 
         output_names=output_names,
         dynamic_axes=dynamic_axes,        
@@ -152,7 +151,7 @@ if __name__ == "__main__":
     if args.bench_mark:
         run_bench_mark()
     if args.export_onnx:
-        export_onnx_model() # OK under cpu
+        export_onnx_model() # OK on trace mode
     
     if not (args.shape_test or args.bench_mark or args.export_onnx):
         parser.print_help()
