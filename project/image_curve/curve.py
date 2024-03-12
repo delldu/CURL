@@ -10,7 +10,6 @@
 # ************************************************************************************/
 #
 import os
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -38,10 +37,19 @@ class CURLNet(nn.Module):
 
 
     def forward(self, img):
+        B, C, H, W = img.size()
+        pad_h = self.MAX_TIMES - (H % self.MAX_TIMES)
+        pad_w = self.MAX_TIMES - (W % self.MAX_TIMES)
+        img = F.pad(img, (0, pad_w, 0, pad_h), 'reflect')
+
+        # img.size() -- [1, 3, 352, 512]
         feat = self.tednet(img)
+        # feat.size() -- [1, 64, 352, 512]
+        # return feat # debug onnx
+
         img = self.curllayer(feat)
 
-        return img.clamp(0, 1.0)
+        return img[:, :, 0:H, 0:W].clamp(0, 1.0)
 
 
 class TEDModel(nn.Module):
@@ -55,7 +63,7 @@ class TEDModel(nn.Module):
         self.refpad = nn.ReflectionPad2d(1)
 
     def forward(self, img):
-        output_img = self.ted(img.float())
+        output_img = self.ted(img)
         return self.final_conv(self.refpad(output_img)) # size() -- [1, 64, 352, 512]
 
 
@@ -191,15 +199,15 @@ class TED(nn.Module):
 
 def rgb_to_lab(img):
     # img.size() -- [3, 341, 512]
+    C, H, W = img.size()
 
     img = img.permute(2, 1, 0).contiguous()
-    W, H, C = img.size()
-    img = img.view(W * H, 3)
+    # img = img.view(W * H, 3)
+    img = img.reshape(W * H, 3)
 
-    img = (
-        (img / 12.92) * img.le(0.04045).float()
-        + (((torch.clamp(img, min=0.0001) + 0.055) / 1.055) ** 2.4) * img.gt(0.04045).float()
-    )
+    temp1 = img.le(0.04045).float()
+    temp2 = 1.0 - temp1
+    img = (img / 12.92) * temp1 + (((torch.clamp(img, min=0.0001) + 0.055) / 1.055) ** 2.4) * temp2
 
     rgb_to_xyz = torch.tensor(
         [  # X        Y          Z
@@ -213,10 +221,12 @@ def rgb_to_lab(img):
     img = torch.mul(img, torch.tensor([1.0/0.950456, 1.0, 1.0/1.088754]).to(img.device))
 
     epsilon = 6.0 / 29.0
-    img = (
-        (img / (3.0 * epsilon ** 2) + 4.0/29.0) * (img.le(epsilon ** 3).float())
-        + (torch.clamp(img, min=0.0001) ** (1.0/3.0) * (img.gt(epsilon ** 3).float()))
-    )
+    epsilon2 = epsilon**2
+    epsilon3 = epsilon**3
+
+    temp1 = img.le(epsilon3).float()
+    temp2 = 1.0 - temp1
+    img = (img / (3.0 * epsilon2) + 4.0/29.0) * temp1 + (torch.clamp(img, min=0.0001) ** (1.0/3.0) * temp2)
 
     fxfyfz_to_lab = torch.tensor(
         [
@@ -248,15 +258,14 @@ def lab_to_rgb(img):
     # img.size() -- [3, 341, 512]
     # img.min(), img.max() -- 0., 0.6350
 
+    C, H, W = img.size()
     img = img.permute(2, 1, 0).contiguous()
-    W, H, C = img.size()
-    # shape = img.shape
-    img = img.view(W * H, 3)
+    # img = img.view(W * H, 3)
+    img = img.reshape(W * H, 3)
 
     img[:, 0] = img[:, 0] * 100.0
     img[:, 1] = ((img[:, 1] * 2.0) - 1.0) * 110.0
     img[:, 2] = ((img[:, 2] * 2.0) - 1.0) * 110.0
-
 
     lab_to_fxfyfz = torch.tensor(
         [  # X Y Z
@@ -270,10 +279,11 @@ def lab_to_rgb(img):
     img = torch.matmul(img + lab_base_offset, lab_to_fxfyfz)
 
     epsilon = 6.0 / 29.0
-    img = (
-            (3.0 * epsilon ** 2 * (img - 4.0 / 29.0)) * img.le(epsilon).float()
-             + (torch.clamp(img, min=0.0001) ** 3.0) * img.gt(epsilon).float()
-        )
+    epsilon2 = epsilon**2
+
+    temp1 = img.le(epsilon).float()
+    temp2 = 1.0 - temp1
+    img = (3.0 * epsilon2 * (img - 4.0 / 29.0)) * temp1 + (torch.clamp(img, min=0.0001) ** 3.0) * temp2
 
     # denormalize for D65 white point
     img = torch.mul(img, torch.tensor([0.950456, 1.0, 1.088754]).to(img.device))
@@ -288,11 +298,9 @@ def lab_to_rgb(img):
 
     img = torch.matmul(img, xyz_to_rgb)
 
-    img = (
-            (img * 12.92 * img.le(0.0031308).float())
-            + ((torch.clamp(img, min=0.0001) ** (1.0 / 2.4) * 1.055) - 0.055) * img.gt(0.0031308).float()
-        )
-
+    temp1 = img.le(0.0031308).float()
+    temp2 = 1.0 - temp1
+    img = (img * 12.92 * temp1) + ((torch.clamp(img, min=0.0001) ** (1.0 / 2.4) * 1.055) - 0.055) * temp2
     img = img.view(W, H, C).permute(2, 1, 0).contiguous()
 
     return img.clamp(0.0, 1.0)
@@ -302,46 +310,25 @@ def hsv_to_rgb(img):
     # img.size() -- [3, 341, 512]
 
     img = img.clamp(0.0, 1.0).permute(2, 1, 0)
+    c0 = img[:, :, 0]
+    c1 = img[:, :, 1]
+    c2 = img[:, :, 2]
 
-    m1 = 0.0
-    m2 = (img[:, :, 2] * (1 - img[:, :, 1]) - img[:, :, 2]) / 60.0
-    m3 = 0.0
-    m4 = -1.0 * m2
-    m5 = 0.0
+    m = (c2 * (1.0 - c1) - c2) / 60.0
 
-    r = (
-        img[:, :, 2]
-        + torch.clamp(img[:, :, 0] * 360.0 - 0.0, 0.0, 60.0) * m1
-        + torch.clamp(img[:, :, 0] * 360.0 - 60.0, 0.0, 60.0) * m2
-        + torch.clamp(img[:, :, 0] * 360.0 - 120.0, 0.0, 120.0) * m3
-        + torch.clamp(img[:, :, 0] * 360.0 - 240.0, 0.0, 60.0) * m4
-        + torch.clamp(img[:, :, 0] * 360.0 - 300.0, 0.0, 60.0) * m5
+    r = (c2
+        + torch.clamp(c0 * 360.0 - 60.0, 0.0, 60.0) * m
+        - torch.clamp(c0 * 360.0 - 240.0, 0.0, 60.0) * m
     )
 
-    m1 = (img[:, :, 2] - img[:, :, 2] * (1.0 - img[:, :, 1])) / 60.0
-    m2 = 0.0
-    m3 = -1.0 * m1
-    m4 = 0.0
-
-    g = (
-        img[:, :, 2] * (1.0 - img[:, :, 1])
-        + torch.clamp(img[:, :, 0] * 360.0 - 0.0, 0.0, 60.0) * m1
-        + torch.clamp(img[:, :, 0] * 360.0 - 60.0, 0.0, 120.0) * m2
-        + torch.clamp(img[:, :, 0] * 360.0 - 180.0, 0.0, 60.0) * m3
-        + torch.clamp(img[:, :, 0] * 360.0 - 240.0, 0.0, 120.0) * m4
+    g = (c2 * (1.0 - c1)
+        - torch.clamp(c0 * 360.0 - 0.0, 0.0, 60.0) * m
+        + torch.clamp(c0 * 360.0 - 180.0, 0.0, 60.0) * m
     )
 
-    m1 = 0.0
-    m2 = (img[:, :, 2] - img[:, :, 2] * (1.0 - img[:, :, 1])) / 60.0
-    m3 = 0.0
-    m4 = -1.0 * m2
-
-    b = (
-        img[:, :, 2] * (1.0 - img[:, :, 1])
-        + torch.clamp(img[:, :, 0] * 360.0 - 0.0, 0.0, 120.0) * m1
-        + torch.clamp(img[:, :, 0] * 360.0 - 120.0, 0.0, 60.0) * m2
-        + torch.clamp(img[:, :, 0] * 360.0 - 180.0, 0.0, 120.0) * m3
-        + torch.clamp(img[:, :, 0] * 360.0 - 300.0, 0.0, 60.0) * m4
+    b = (c2 * (1.0 - c1)
+        - torch.clamp(c0 * 360.0 - 120.0, 0.0, 60.0) * m
+        + torch.clamp(c0 * 360.0 - 300.0, 0.0, 60.0) * m
     )
 
     img = torch.stack((r, g, b), dim=2)
@@ -360,14 +347,15 @@ def rgb_to_hsv(img):
     mx = torch.max(img, dim=1)[0]
     mn = torch.min(img, dim=1)[0]
 
+    H_2 = (W*H)//2  # half
     ones = torch.ones(W * H).to(img.device) # size() -- [180224]
-    ones1 = ones[0 : (W*H)//2] # size() -- [90112]
-    ones2 = ones[(W*H) // 2 : W*H] # size() -- [90112]
+    ones1 = ones[0 : H_2] # size() -- [90112]
+    ones2 = ones[H_2 : W*H] # size() -- [90112]
 
-    mx1 = mx[0 : (W *H)//2] # size() -- [90112]
-    mx2 = mx[(W * H)//2 : W*H] # size() -- [90112]
-    mn1 = mn[0 : (W * H)//2] # size() -- [90112]
-    mn2 = mn[(W*H)//2 : W*H] # size() -- [90112]
+    mx1 = mx[0 : H_2] # size() -- [90112]
+    mx2 = mx[H_2 : W*H] # size() -- [90112]
+    mn1 = mn[0 : H_2] # size() -- [90112]
+    mn2 = mn[H_2 : W*H] # size() -- [90112]
 
     df1 = torch.add(mx1, torch.mul(ones1 * -1, mn1))
     df2 = torch.add(mx2, torch.mul(ones2 * -1, mn2))
@@ -375,13 +363,18 @@ def rgb_to_hsv(img):
     df = torch.cat((df1, df2), dim=0) # size() -- [180224]
     del df1, df2
 
-    df = df.view(W, H) + 1e-10
-    mx = mx.view(W, H) # size() -- [512, 352]
+    # df = df.view(W, H) + 1e-10
+    # mx = mx.view(W, H) # size() -- [512, 352]
+
+    df = df.reshape(W, H) + 1e-10
+    mx = mx.reshape(W, H) # size() -- [512, 352]
 
     df = df.to(img.device)
     mx = mx.to(img.device)
 
-    img = img.view(W, H, C)
+    # img = img.view(W, H, C)
+    img = img.reshape(W, H, C)
+
     r = img[:, :, 0].clone()
     g = img[:, :, 1].clone()
     b = img[:, :, 2].clone()
@@ -393,7 +386,6 @@ def rgb_to_hsv(img):
         + (4.0 + (r - g) / df) * b.eq(mx).float()
     )
     img_copy[:, :, 0] = img_copy[:, :, 0] * 60.0
-    del r, g, b
 
     r = img_copy[:, :, 0]
     zero = torch.zeros(W, H).to(img.device) # size() -- [512, 352]
@@ -574,18 +566,18 @@ class CURLLayer(nn.Module):
         self.fc_hsv = nn.Linear(64, 64)
 
     def forward(self, x):
+        # x.size() -- [1, 64, 352, 512]
         x.contiguous()  # remove memory holes
 
         img = x[:, 0:3, :, :].clamp(0.0, 1.0)
         feat = x[:, 3:64, :, :]
         #######################################################
 
-
         img_lab = rgb_to_lab(img.squeeze(0))
 
         feat_lab = torch.cat((feat, img_lab.unsqueeze(0)), dim=1)
         x = self.lab_layer1(feat_lab)
-        del feat_lab
+        # del feat_lab
         x = self.lab_layer2(x)
         x = self.lab_layer3(x)
         x = self.lab_layer4(x)
@@ -593,9 +585,14 @@ class CURLLayer(nn.Module):
         x = self.lab_layer6(x)
         x = self.lab_layer7(x)
         x = self.lab_layer8(x)
-        x = x.view(x.size()[0], -1)
+
+        # x.size() -- [1, 64, 1, 1]
+        # x = x.view(x.size(0), -1)
+        B, C, H, W = x.size()
+        x = x.view(B, C * H * W)
+
         x = self.dropout1(x)
-        L = self.fc_lab(x)
+        L = self.fc_lab(x) # size() -- [1, 48]
 
         #######################################################
         img_lab = adjust_lab(img_lab.squeeze(0), L[0, 0:48])
@@ -613,7 +610,10 @@ class CURLLayer(nn.Module):
         x = self.rgb_layer6(x)
         x = self.rgb_layer7(x)
         x = self.rgb_layer8(x)
-        x = x.view(x.size()[0], -1)
+        # x.size() -- [1, 64, 1, 1]
+        # x = x.view(x.size(0), -1)
+        B, C, H, W = x.size()
+        x = x.view(B, C * H * W)
         x = self.dropout2(x)
         R = self.fc_rgb(x)
 
@@ -625,7 +625,7 @@ class CURLLayer(nn.Module):
         feat_hsv = torch.cat((feat, img_hsv.unsqueeze(0)), dim=1)
 
         x = self.hsv_layer1(feat_hsv)
-        del feat_hsv
+        # del feat_hsv
         x = self.hsv_layer2(x)
         x = self.hsv_layer3(x)
         x = self.hsv_layer4(x)
@@ -633,7 +633,9 @@ class CURLLayer(nn.Module):
         x = self.hsv_layer6(x)
         x = self.hsv_layer7(x)
         x = self.hsv_layer8(x)
-        x = x.view(x.size()[0], -1)
+        # x = x.view(x.size(0), -1)
+        B, C, H, W = x.size()
+        x = x.view(B, C * H * W)
         x = self.dropout3(x)
         H = self.fc_hsv(x)
 

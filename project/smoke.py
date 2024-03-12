@@ -8,43 +8,6 @@
 # ***
 # ************************************************************************************/
 #
-
-# import pdb
-# import os
-# import time
-# import random
-# import torch
-# import todos
-# import image_curve
-
-# from tqdm import tqdm
-
-# if __name__ == "__main__":
-#     model, device = image_curve.get_curve_model()
-
-#     N = 100
-#     B, C, H, W = 1, 3, model.max_h, model.max_w
-
-#     mean_time = 0
-#     progress_bar = tqdm(total=N)
-#     for count in range(N):
-#         progress_bar.update(1)
-
-#         h = random.randint(0, 32)
-#         w = random.randint(0, 32)
-#         x = torch.randn(B, C, H + h, W + w)
-#         # print("x: ", x.size())
-
-#         start_time = time.time()
-#         y = todos.model.forward(model, device, x)
-#         mean_time += time.time() - start_time
-
-#     mean_time /= N
-#     print(f"Mean spend {mean_time:0.4f} seconds")
-#     os.system("nvidia-smi | grep python")
-
-
-
 import os
 import argparse
 
@@ -65,7 +28,7 @@ def test_input_shape():
 
 
     N = 100
-    B, C, H, W = 1, 3, model.max_h, model.max_w
+    B, C, H, W = 1, 3, model.MAX_H, model.MAX_W
 
     mean_time = 0
     progress_bar = tqdm(total=N)
@@ -94,7 +57,7 @@ def run_bench_mark():
     model, device = image_curve.get_curve_model()
 
     N = 100
-    B, C, H, W = 1, 3, model.max_h, model.max_w
+    B, C, H, W = 1, 3, model.MAX_H, model.MAX_W
 
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA]
@@ -114,15 +77,15 @@ def export_onnx_model():
     import onnx
     import onnxruntime
     from onnxsim import simplify
+    import onnxoptimizer
 
     print("Export onnx model ...")
 
     # 1. Run torch model
-    model, device = image_curve.get_curve_model()
+    model, device = image_curve.get_trace_model()
 
-    B, C, H, W = 1, 3, model.max_h, model.max_w
+    B, C, H, W = 1, 3, 256, 256 # model.MAX_H, model.MAX_W
     model.to(device)
-
 
     dummy_input = torch.randn(B, C, H, W).to(device)
     with torch.no_grad():
@@ -132,10 +95,19 @@ def export_onnx_model():
     # 2. Export onnx model
     input_names = [ "input" ]
     output_names = [ "output" ]
+    dynamic_axes = { 
+        'input' : {2: 'height', 3: 'width'}, 
+        'output' : {2: 'height', 3: 'width'} 
+    }
     onnx_filename = "output/image_curve.onnx"
 
+    # OK under cpu !!!
     torch.onnx.export(model, dummy_input, onnx_filename, 
-        verbose=False, input_names=input_names, output_names=output_names)
+        verbose=True, 
+        input_names=input_names, 
+        output_names=output_names,
+        dynamic_axes=dynamic_axes,        
+    )
 
     # 3. Check onnx model file
     onnx_model = onnx.load(onnx_filename)
@@ -143,6 +115,7 @@ def export_onnx_model():
 
     onnx_model, check = simplify(onnx_model)
     assert check, "Simplified ONNX model could not be validated"
+    onnx_model = onnxoptimizer.optimize(onnx_model)    
     onnx.save(onnx_model, onnx_filename)
     # print(onnx.helper.printable_graph(onnx_model.graph))
 
@@ -179,7 +152,7 @@ if __name__ == "__main__":
     if args.bench_mark:
         run_bench_mark()
     if args.export_onnx:
-        export_onnx_model()
+        export_onnx_model() # OK under cpu
     
     if not (args.shape_test or args.bench_mark or args.export_onnx):
         parser.print_help()

@@ -20,13 +20,10 @@ from . import curve
 
 import pdb
 
-
-
-def get_curve_model():
+def get_trace_model():
     """Create model."""
 
     model = curve.CURLNet()
-    model = todos.model.ResizePadModel(model)
 
     device = todos.model.get_device()
     model = model.to(device)
@@ -34,17 +31,31 @@ def get_curve_model():
 
     print(f"Running on {device} ...")
 
-    # # make sure model good for C/C++
-    # model = torch.jit.script(model)
-    # # https://github.com/pytorch/pytorch/issues/52286
-    # torch._C._jit_set_profiling_executor(False)
-    # # C++ Reference
-    # # torch::jit::getProfilingMode() = false;                                                                                                             
-    # # torch::jit::setTensorExprFuserEnabled(false);
+    return model, device
 
-    # todos.data.mkdir("output")
-    # if not os.path.exists("output/image_curve.torch"):
-    #     model.save("output/image_curve.torch")
+def get_curve_model():
+    """Create model."""
+
+    model = curve.CURLNet()
+    # model = todos.model.ResizePadModel(model)
+
+    device = todos.model.get_device()
+    model = model.to(device)
+    model.eval()
+
+    print(f"Running on {device} ...")
+
+    # make sure model good for C/C++
+    model = torch.jit.script(model)
+    # https://github.com/pytorch/pytorch/issues/52286
+    torch._C._jit_set_profiling_executor(False)
+    # C++ Reference
+    # torch::jit::getProfilingMode() = false;                                                                                                             
+    # torch::jit::setTensorExprFuserEnabled(false);
+
+    todos.data.mkdir("output")
+    if not os.path.exists("output/image_curve.torch"):
+        model.save("output/image_curve.torch")
 
     return model, device
 
